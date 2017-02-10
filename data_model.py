@@ -13,6 +13,9 @@ class Review(object):
     def star_of_feature(self, feature):
         return self.feature_to_star[feature]
 
+    def __repr__(self):
+        return repr(self.feature_to_star)
+
     @classmethod
     def import_csv(cls, file_path, star_rank=5):
         """
@@ -45,6 +48,8 @@ class Feature(object):
         self.criterion = self.sum_dirichlet_variances
         
     def increase_star(self, star, count=1):
+        if star < 1 or star > len(self.ratings):
+            raise IndexError
         self.ratings[star - 1] += count
     
     def get_num_ratings(self, star):
