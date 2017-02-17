@@ -2,6 +2,8 @@ import sys
 import random
 from collections import OrderedDict
 
+import numpy as np
+
 import data_model
 from edmunds import EdmundReview
 from data_model import Feature
@@ -35,22 +37,25 @@ class EdmundReviewSolicitation(object):
             i.e. len(reviews))
         features_list: list of features name (string), if any (default: []) 
     """
-    def __init__(self, reviews, num_polls=20, features_list=[]):
+    def __init__(self, reviews, num_polls=20, features_list=[],
+                 criterion='weighted_sum_dirichlet_variances'):
         self.original_reviews = reviews
         self.reviews = reviews.copy()
         self.num_polls = num_polls if num_polls <= len(reviews)\
             and num_polls > 0 else len(reviews)
         self.features_list = features_list
-        self.__init_simulation_stats()
+        self.__init_simulation_stats(criterion=criterion)
 
-    def __init_simulation_stats(self):
+    def __init_simulation_stats(self,
+                                criterion='weighted_sum_dirichlet_variances'):
         self.step_to_cost = OrderedDict()
         self.name_to_feature = {}    # feature_name -> feature (Feature)
     
         # Initiate all features
         for feature_name in self.features_list:
             stars = [0] * self.reviews[0].star_rank
-            self.name_to_feature[feature_name] = Feature(feature_name, stars)
+            self.name_to_feature[feature_name] = Feature(feature_name, stars,
+                    criterion=criterion)
         self.step_to_cost[0] = Feature.product_cost(
                 self.name_to_feature.values())
     
@@ -61,88 +66,86 @@ class EdmundReviewSolicitation(object):
                 that customers answer a question
         """ 
         # Iteratively picking feature to ask customers
-        for i in range(self.num_polls): 
-            # Pick a Feature with highest cost to reduce
-            picked_feature = sorted(self.name_to_feature.values(),
-                                    reverse=True)[0]
-            # print("Cost of {}: {:.3f}".format(picked_feature.name,
-                # picked_feature.criterion()))
+        for i in range(self.num_polls):
+            picked_feature = self.pick_highest_cost_feature()
     
             answered_review = None
             for review in self.reviews:
                 if picked_feature.name in review.feature_to_star.keys():
                     answered_review = review
                     answered_star = review.feature_to_star[picked_feature.name]
-                    if answered_star < 1 or answered_star > 5:
-                        # print(review)
-                        pass
-                    try:
-                        picked_feature.increase_star(answered_star, count=1) 
-                    except IndexError:
-                        pass
-                        # print('81: {} - {}'.format(picked_feature,
-                            # answered_star))
+                    picked_feature.increase_star(answered_star, count=1) 
                     self.reviews.remove(answered_review)
                     break
     
             if not answered_review:
-                picked_feature, answered_star = self.pick_random_feature()
-                try:
-                    self.name_to_feature[picked_feature].increase_star(
-                        answered_star, count=1)
-                except IndexError:
-                    # print('92: {} - {}'.format(picked_feature, answered_star))
-                    pass
-    
+                self.reviews.extend(self.original_reviews.copy()) 
             self.step_to_cost[i + 1] = Feature.product_cost(
                     self.name_to_feature.values())
-    
+
         return SimulationStats(self.num_polls, self.step_to_cost,
                 list(self.name_to_feature.values()))
-    
-    
-    def ask_randomly(self):
-        """Randomly ask questions to reduce the cost""" 
-        # Iteratively picking feature to ask customers
-        for i in range(self.num_polls): 
-            picked_feature, answered_star = self.pick_random_feature()
-            try:
-                self.name_to_feature[picked_feature].increase_star(
-                    answered_star, count=1)
-            except IndexError:
-                # print('111: {} - {}'.format(picked_feature, answered_star))
-                pass
+
+    def ask_greedily_then_answer_in_time_order(self):
+        return self.ask_then_answer_in_time_order(
+                pick_func='pick_highest_cost_feature')
+
+    def ask_greedily_prob_then_answer_in_time_order(self):
+        return self.ask_then_answer_in_time_order(
+                pick_func='pick_feature_with_prob')
+
+    def ask_randomly_then_answer_in_time_order(self):
+        return self.ask_then_answer_in_time_order(
+                pick_func='pick_random_feature') 
+
+    def ask_then_answer_in_time_order(self, pick_func='pick_random_feature'):
+        """Ask questions using pick_func, answer in time order."""
+        for i in range(self.num_polls):
+            picked_feature = self.__getattribute__(pick_func)()
+            answered_review = self.reviews.pop(0) # earliest review
+
+            if picked_feature.name in answered_review.feature_to_star.keys(): 
+                answered_star = answered_review.feature_to_star[
+                        picked_feature.name]
+                picked_feature.increase_star(answered_star, count=1)
 
             self.step_to_cost[i + 1] = Feature.product_cost(
                     self.name_to_feature.values())
     
         return SimulationStats(self.num_polls, self.step_to_cost,
-                list(self.name_to_feature.values()))
+                list(self.name_to_feature.values())) 
     
-    
+    def pick_highest_cost_feature(self):
+        """Pick a feature with highest cost, break tie arbitrarily.
+        Returns:
+            datamodel.Feature
+        """
+        sorted_features = sorted(self.name_to_feature.values(), reverse=True)
+        highest_cost = sorted_features[0].criterion()
+        picked_features = [feature for feature in sorted_features
+                                   if feature.criterion() == highest_cost]
+        return random.choice(picked_features)
+
+    def pick_feature_with_prob(self):
+        """Pick a feature with highest cost, break tie arbitrarily.
+        Returns:
+            datamodel.Feature
+        """
+        features = list(self.name_to_feature.values())
+        costs = np.array([feature.criterion() for feature in features])
+        weights = costs / np.sum(costs) 
+        return np.random.choice(features, p=weights)
+
     def pick_random_feature(self):
-        """Returns tuple (picked_feature, answered_star)""" 
-        answered_review = None
-        if not self.reviews:
-            self.reviews = self.original_reviews.copy()
+        """Pick a feature randomly
+        Returns:
+            datamodel.Feature
+        """
+        return random.choice(list(self.name_to_feature.values()))
 
-        while not answered_review or not answered_review.features:
-            try:
-                answered_review = random.choice(self.reviews)
-            except IndexError:
-                # print('Empty self.feature: {}'.format(self.original_reviews))
-                pass
 
-        if not answered_review:
-            self.reviews.remove(answered_review)
-            return None
-    
-        random_feature = random.choice(list(answered_review.features))
-        answered_star = answered_review.feature_to_star[random_feature]
-        return (random_feature, answered_star)
-    
-
-def simulate_reviews_soli(file_path, star_rank=5):
+def simulate_reviews_soli(file_path, star_rank=5,
+                          criterion='weighted_sum_dirichlet_variances'):
     """Simulate the asking process
     Args:
         file_path (string)
@@ -150,18 +153,20 @@ def simulate_reviews_soli(file_path, star_rank=5):
     """
     car_to_reviews = EdmundReview.import_csv(file_path, star_rank=star_rank)
     car_to_reviews = {key: value for key, value in car_to_reviews.items()
-                            if len(value) >= 70}
+                            if len(value) >= 970}
     car_to_result_stats = {}
     for car, car_reviews in car_to_reviews.items():
         # print("{} - {} reviews".format(car, len(car_reviews)))
         car_to_result_stats[car] = simulate_reviews_soli_per_product(
-                car_reviews, num_polls=60,
-                features_list=EdmundReview.main_features)
+                car_reviews, num_polls=100,
+                features_list=EdmundReview.main_features,
+                criterion=criterion)
 
     return (car_to_reviews, car_to_result_stats)
 
 
-def simulate_reviews_soli_per_product(reviews, num_polls=-1, features_list=[]):
+def simulate_reviews_soli_per_product(reviews, num_polls=-1, features_list=[],
+        criterion='weighted_sum_dirichlet_variances'):
     """
     Args:
         reviews: list of Review
@@ -171,16 +176,37 @@ def simulate_reviews_soli_per_product(reviews, num_polls=-1, features_list=[]):
     Returns: 
         (greedy_stats, random_stats): tuple of SimulationStats
     """
-    greedy_stats = EdmundReviewSolicitation( reviews.copy(),
+    greedy_stats = EdmundReviewSolicitation(reviews.copy(),
             num_polls=num_polls,
-            features_list=features_list).ask_greedily(answer_possibility=1)
-    # greedy_stats.print_stats('Greedily picking:')
+            features_list=features_list,
+            criterion=criterion)\
+                    .ask_greedily(answer_possibility=1)
+    greedy_stats.print_stats('Greedily picking:')
+
+    time_greedy_stats = EdmundReviewSolicitation(reviews.copy(),
+            num_polls=num_polls,
+            features_list=features_list,
+            criterion=criterion)\
+                    .ask_greedily_then_answer_in_time_order() 
+    time_greedy_stats.print_stats('Greedily picking with time order:')
+
+    time_prob_greedy_stats = EdmundReviewSolicitation(reviews.copy(),
+            num_polls=num_polls,
+            features_list=features_list,
+            criterion=criterion)\
+                    .ask_greedily_prob_then_answer_in_time_order()
+    time_prob_greedy_stats.print_stats(
+            'Greedily prob picking with time order:')
 
     random_stats = EdmundReviewSolicitation(reviews.copy(),
             num_polls=num_polls,
-            features_list=features_list).ask_randomly()
-    # random_stats.print_stats('Randomly picking:')
-    return (greedy_stats, random_stats)
+            features_list=features_list,
+            criterion=criterion)\
+                    .ask_randomly_then_answer_in_time_order()
+    random_stats.print_stats('Randomly picking:') 
+
+    return (greedy_stats, time_greedy_stats, time_prob_greedy_stats,
+            random_stats)
 
    
 def main(file_path):

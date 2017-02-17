@@ -3,8 +3,8 @@ import inspect
 import csv
 from collections import defaultdict
 from collections import OrderedDict
+from dateutil.parser import parse
 
-from data_model import Feature
 from data_model import Review
 
 
@@ -58,10 +58,32 @@ class EdmundReview(Review):
 
     @classmethod
     def import_csv(cls, file_path, star_rank=5):
+        """Import Edmund dataset from csv file
+
+        Returns:
+            car_to_reviews: dict of car -> list of time-sorted reviews
+        """
         car_to_reviews = defaultdict(list)
-        with open(file_path) as csvfile: 
+        car_to_rows = defaultdict(list)
+        with open(file_path) as csvfile:
             csv_reader = csv.DictReader(csvfile) 
             for row in csv_reader:
+                # Filter out rows with erroneous rating
+                stars = [int(row[feature]) for feature in cls.main_features
+                        if row[feature]]
+                is_erroneous = any([star for star in stars
+                                    if star > star_rank or star <= 0])
+                if not is_erroneous:
+                    car = Car(row["make"], row["model"],
+                              row["year"], row["styleId"])
+                    car_to_rows[car].append(row)
+
+        # Sort rows of a car using created dates
+        for car, rows in car_to_rows.items():
+            time_sorted_rows = sorted(rows,
+                                      key=lambda row: parse(row['created']))
+
+            for row in time_sorted_rows:
                 feature_to_star = {feature: int(row[feature])
                                    for feature in cls.main_features
                                    if row[feature]}

@@ -42,11 +42,15 @@ class Feature(object):
             star.
         criterion: cost need to be optimized
     """ 
-    def __init__(self, name, ratings): 
+    def __init__(self, name, ratings,
+                 criterion='weighted_sum_dirichlet_variances'):
         self.name = name
         self.ratings = ratings
-        self.criterion = self.sum_dirichlet_variances
-        
+        self.star_rank = len(self.ratings)
+        # self.criterion = self.sum_dirichlet_variances 
+        # self.criterion = self.weighted_sum_dirichlet_variances
+        self.criterion = self.__getattribute__(criterion)
+
     def increase_star(self, star, count=1):
         if star < 1 or star > len(self.ratings):
             raise IndexError
@@ -85,6 +89,14 @@ class Feature(object):
     def sum_dirichlet_variances(self):
         alphas = [star + 1 for star in self.ratings]
         return sum(stats.dirichlet.var(alphas))
+
+    def weighted_sum_dirichlet_variances(self):
+        prior_count = self.star_rank
+        prior_sum_variance = sum(stats.dirichlet.var([1] * prior_count))
+        weighted_sum = (sum(self.ratings) * self.sum_dirichlet_variances() \
+                        + prior_count * prior_sum_variance) \
+                        / (sum(self.ratings) + prior_count)
+        return weighted_sum
 
     @classmethod
     def product_cost(cls, features):
