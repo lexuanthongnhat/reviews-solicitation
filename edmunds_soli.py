@@ -28,6 +28,7 @@ class EdmundsReviewSolicitation(ReviewsSolicitation):
                     break
     
             if not answered_review:
+                picked_feature.no_answer_count += 1
                 self.reviews.extend(self.original_reviews.copy()) 
             self.step_to_cost[i + 1] = Feature.product_cost(
                     self.name_to_feature.values())
@@ -57,6 +58,8 @@ class EdmundsReviewSolicitation(ReviewsSolicitation):
                 answered_star = answered_review.feature_to_star[
                         picked_feature.name]
                 picked_feature.increase_star(answered_star, count=1)
+            else:
+                picked_feature.no_answer_count += 1
 
             self.step_to_cost[i + 1] = Feature.product_cost(
                     self.name_to_feature.values())

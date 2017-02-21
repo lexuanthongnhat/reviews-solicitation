@@ -83,6 +83,8 @@ class SimulationStats(object):
         self.num_polls = num_polls
         self.step_to_cost = step_to_cost
         self.final_features = list(final_features)
+        self.no_answer_count = sum([feature.no_answer_count
+                                    for feature in self.final_features])
 
     def stats_str(self, message=''):
         stat_str = message + '\n'
@@ -90,4 +92,5 @@ class SimulationStats(object):
                  for step, cost in self.step_to_cost.items()]
         stat_str += ', '.join(costs) + '\n'
         stat_str += 'final_features: {}'.format(self.final_features)
+        stat_str += '/no_answer_count={}'.format(self.no_answer_count)
         return stat_str 

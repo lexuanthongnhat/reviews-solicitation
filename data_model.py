@@ -53,6 +53,7 @@ class Feature(object):
         self.name = name
         self.ratings = ratings
         self.star_rank = len(self.ratings)
+        self.no_answer_count = 0
         # self.criterion = self.sum_dirichlet_variances 
         # self.criterion = self.weighted_sum_dirichlet_variances
         self.criterion = self.__getattribute__(criterion)
@@ -69,7 +70,8 @@ class Feature(object):
             raise IndexError
 
     def __repr__(self):
-        return "{}: {}".format(self.name, self.ratings)
+        return "{}: {}/no_answer={}".format(self.name, self.ratings,
+                self.no_answer_count)
 
     def __eq__(self, other):
         return isinstance(other, self.__class__) and self.name == other.name
