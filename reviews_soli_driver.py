@@ -33,7 +33,7 @@ def simulate_reviews_soli(file_path, star_rank=5,
     product_to_reviews = review_cls.import_csv(file_path, star_rank=star_rank)
     product_to_reviews = {key: value
                           for key, value in product_to_reviews.items()
-                          if len(value) >= 970} 
+                          if len(value) >= 970}
     product_to_result_stats = {}
     for product, reviews in product_to_reviews.items():
         product_to_result_stats[product] = simulate_reviews_soli_per_product(
@@ -57,12 +57,13 @@ def simulate_reviews_soli_per_product(
         num_polls: integer of the number of times (reviews) to ask customers
             (default: -1, means the number of reviews available for simulation)
         seed_features: list of product's features, if know upfront
-    Returns: 
+    Returns:
         (greedy_stats, random_stats): tuple of SimulationStats
     """
     sim_stats = []
     for ask_method in ReviewsSolicitation.ask_methods:
-        reviews_soli_sim = review_soli_sim_cls(reviews,
+        reviews_soli_sim = review_soli_sim_cls(
+                reviews,
                 num_polls=num_polls,
                 seed_features=seed_features,
                 criterion=criterion)
@@ -73,14 +74,14 @@ def simulate_reviews_soli_per_product(
 
 
 def main(file_path):
-    reviews = data_model.import_csv(file_path) 
+    reviews = data_model.import_csv(file_path)
     print("# reviews: {}".format(len(reviews)))
 
     print("# reviews that have minor features rating: {}".format(
             data_model.count_reviews_with_minor(reviews)))
 
     print("main feature rating count: {}".format(
-            data_model.count_feature_ratings(reviews))) 
+            data_model.count_feature_ratings(reviews)))
     print("minor feature rating count: {}".format(
             data_model.count_feature_ratings(reviews, 'minor_features')))
 
@@ -91,7 +92,7 @@ def main(file_path):
             continue
         print(product)
         print("main feature rating count: {}".format(
-                data_model.count_feature_ratings(reviews))) 
+                data_model.count_feature_ratings(reviews)))
         print("minor feature rating count: {}".format(
                 data_model.count_feature_ratings(reviews, 'minor_features')))
         if count > 2:

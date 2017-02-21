@@ -4,14 +4,14 @@ from abc import ABC, abstractmethod
 
 class Review(ABC):
     """Abstract class for review
-    """ 
+    """
     @property
     @abstractmethod
     def seed_features(self):
         return "Please implement this property!"
 
     def __init__(self, feature_to_star, star_rank=5):
-        self.feature_to_star = feature_to_star 
+        self.feature_to_star = feature_to_star
         self.star_rank = star_rank
 
         self.features = self.feature_to_star.keys()
@@ -34,7 +34,6 @@ class Review(ABC):
         """
 
 
-#TODO(Nhat): unit test for class Feature 
 class Feature(object):
     """
     Represent a product feature/attribute/aspect
@@ -47,14 +46,15 @@ class Feature(object):
             1, 2, 3 stars respectively. Require 0 with no ratings for that
             star.
         criterion: cost need to be optimized
-    """ 
+    """
+
     def __init__(self, name, ratings,
                  criterion='weighted_sum_dirichlet_variances'):
         self.name = name
         self.ratings = ratings
         self.star_rank = len(self.ratings)
         self.no_answer_count = 0
-        # self.criterion = self.sum_dirichlet_variances 
+        # self.criterion = self.sum_dirichlet_variances
         # self.criterion = self.weighted_sum_dirichlet_variances
         self.criterion = self.__getattribute__(criterion)
 
@@ -62,7 +62,7 @@ class Feature(object):
         if star < 1 or star > len(self.ratings):
             raise IndexError
         self.ratings[star - 1] += count
-    
+
     def get_num_ratings(self, star):
         if star > 0 and star <= len(self.ratings):
             return self.ratings[star - 1]
@@ -71,7 +71,7 @@ class Feature(object):
 
     def __repr__(self):
         return "{}: {}/no_answer={}".format(self.name, self.ratings,
-                self.no_answer_count)
+                                            self.no_answer_count)
 
     def __eq__(self, other):
         return isinstance(other, self.__class__) and self.name == other.name
@@ -101,11 +101,11 @@ class Feature(object):
     def weighted_sum_dirichlet_variances(self):
         prior_count = self.star_rank
         prior_sum_variance = sum(stats.dirichlet.var([1] * prior_count))
-        weighted_sum = (sum(self.ratings) * self.sum_dirichlet_variances() \
-                        + prior_count * prior_sum_variance) \
-                        / (sum(self.ratings) + prior_count)
+        weighted_sum = (sum(self.ratings) * self.sum_dirichlet_variances()
+                        + prior_count * prior_sum_variance) / \
+            (sum(self.ratings) + prior_count)
         return weighted_sum
 
     @classmethod
     def product_cost(cls, features):
-        return sum([feature.criterion() for feature in features]) 
+        return sum([feature.criterion() for feature in features])

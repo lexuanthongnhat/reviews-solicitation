@@ -10,7 +10,7 @@ class ReviewsSolicitation(ABC):
         reviews: list of data_model.Review
         num_polls: integer of how many times can ask customers (default: -1,
             i.e. len(reviews))
-        seed_features: list of features name (string), if any (default: []) 
+        seed_features: list of features name (string), if any (default: [])
     """
     ask_methods = ['ask_greedily_answer_mostly',
                    'ask_greedily_answer_in_time_order',
@@ -30,14 +30,14 @@ class ReviewsSolicitation(ABC):
                                 criterion='weighted_sum_dirichlet_variances'):
         self.step_to_cost = OrderedDict()
         self.name_to_feature = {}    # feature_name -> feature (Feature)
-    
+
         # Initiate all features
         for feature_name in self.seed_features:
             stars = [0] * self.reviews[0].star_rank
             self.name_to_feature[feature_name] = Feature(feature_name, stars,
-                    criterion=criterion)
+                                                         criterion=criterion)
         self.step_to_cost[0] = Feature.product_cost(
-                self.name_to_feature.values()) 
+                self.name_to_feature.values())
 
     @abstractmethod
     def ask_greedily_answer_mostly(self):
@@ -69,7 +69,7 @@ class ReviewsSolicitation(ABC):
         chronologically.
 
         If the review doesn't have that feature, consider as no answer and
-        remove review from the set.""" 
+        remove review from the set."""
 
 
 class SimulationStats(object):
@@ -78,7 +78,7 @@ class SimulationStats(object):
         num_polls (int): how many time can ask customers
         step_to_cost (dict): step (int) -> cost
         final_features (list): list of data_model.Feature
-    """ 
+    """
     def __init__(self, num_polls, step_to_cost, final_features):
         self.num_polls = num_polls
         self.step_to_cost = step_to_cost
@@ -93,4 +93,4 @@ class SimulationStats(object):
         stat_str += ', '.join(costs) + '\n'
         stat_str += 'final_features: {}'.format(self.final_features)
         stat_str += '/no_answer_count={}'.format(self.no_answer_count)
-        return stat_str 
+        return stat_str
