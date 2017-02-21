@@ -1,9 +1,15 @@
 import scipy.stats as stats
+from abc import ABC, abstractmethod
 
 
-class Review(object):
+class Review(ABC):
     """Abstract class for review
     """ 
+    @property
+    @abstractmethod
+    def seed_features(self):
+        return "Please implement this property!"
+
     def __init__(self, feature_to_star, star_rank=5):
         self.feature_to_star = feature_to_star 
         self.star_rank = star_rank
@@ -17,6 +23,7 @@ class Review(object):
         return repr(self.feature_to_star)
 
     @classmethod
+    @abstractmethod
     def import_csv(cls, file_path, star_rank=5):
         """
         Args:
@@ -25,7 +32,6 @@ class Review(object):
         Returns:
             product_to_reviews (dict): product -> list of Reviews
         """
-        pass
 
 
 #TODO(Nhat): unit test for class Feature 

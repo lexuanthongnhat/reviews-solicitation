@@ -32,7 +32,7 @@ Edmunds dataset comes with following fields
         fuelEconomy, maintenanceCost, purchaseCost, resaleValue, warranty
     created, updated
 """
-class EdmundReview(Review):
+class EdmundsReview(Review):
     
     features_dict = {
             'performanceRating': ['acceleration', 'braking', 'roadHolding',
@@ -50,8 +50,9 @@ class EdmundReview(Review):
                                   'engine', 'transmission', 'electronics'],
             'valueRating': ['fuelEconomy', 'maintenanceCost', 'purchaseCost',
                             'resaleValue', 'warranty']
-            }
+            } 
     main_features = features_dict.keys()
+    seed_features = main_features
     minor_features = [fture for ftures in features_dict.values()
                             for fture in ftures]
     overall_rating = 'userRating'
@@ -128,6 +129,63 @@ class Car(object):
         return hash((self.make, self.model, self.year))
 
 
+def group_reviews_into_cars(reviews):
+    """
+    Args:
+        reviews(list)
+    Returns:
+        car_to_reviews(dict): Car -> list of reviews 
+    """
+
+    car_to_reviews = defaultdict(list)
+    for rev in reviews:
+        car = Car(rev["make"], rev["model"], rev["year"], rev["styleId"])
+        car_to_reviews[car].append(rev) 
+
+    return car_to_reviews
+
+
+def count_feature_ratings(reviews, feature_category='main_features'):
+    """Count reviews that have a specific number of rated minor features
+    Args:
+        reviews(list)
+        feature_category: 'main_features', or 'minor_features' - attributes
+        of EdmundsReview
+    Returns:
+        num_ratings_to_count(dict)
+    """
+
+    num_ratings_to_count = defaultdict(int) 
+    attrs = inspect.getmembers(EdmundsReview)
+    features = list(filter(lambda attr: attr[0] == feature_category,
+                           attrs))[0][1] 
+    for review in reviews:
+        num_ratings = sum(
+                map(lambda f: 1 if review[f] else 0, features)) 
+        num_ratings_to_count[num_ratings] += 1 
+        
+    return OrderedDict(num_ratings_to_count)
+
+
+def count_reviews_with_minor(reviews):
+    count_minor = 0
+    for row in reviews:
+        for minor_feature in EdmundsReview.minor_features:
+            if row[minor_feature]:
+                count_minor += 1
+                break
+    return count_minor
+
+
+def import_csv(file_path):
+    reviews = []
+    with open(file_path) as csvfile: 
+        csv_reader = csv.DictReader(csvfile) 
+        for row in csv_reader:
+            reviews.append(row)
+    return reviews
+
+
 def main(file_path):
 
     reviews = import_csv(file_path) 
@@ -157,63 +215,6 @@ def main(file_path):
     print('# cars: {}'.format(len(car_to_reviews.keys())))
 
 
-def group_reviews_into_cars(reviews):
-    """
-    Args:
-        reviews(list)
-    Returns:
-        car_to_reviews(dict): Car -> list of reviews 
-    """
-
-    car_to_reviews = defaultdict(list)
-    for rev in reviews:
-        car = Car(rev["make"], rev["model"], rev["year"], rev["styleId"])
-        car_to_reviews[car].append(rev) 
-
-    return car_to_reviews
-
-
-def count_feature_ratings(reviews, feature_category='main_features'):
-    """Count reviews that have a specific number of rated minor features
-    Args:
-        reviews(list)
-        feature_category: 'main_features', or 'minor_features' - attributes
-        of EdmundReview
-    Returns:
-        num_ratings_to_count(dict)
-    """
-
-    num_ratings_to_count = defaultdict(int) 
-    attrs = inspect.getmembers(EdmundReview)
-    features = list(filter(lambda attr: attr[0] == feature_category,
-                           attrs))[0][1] 
-    for review in reviews:
-        num_ratings = sum(
-                map(lambda f: 1 if review[f] else 0, features)) 
-        num_ratings_to_count[num_ratings] += 1 
-        
-    return OrderedDict(num_ratings_to_count)
-
-
-def count_reviews_with_minor(reviews):
-    count_minor = 0
-    for row in reviews:
-        for minor_feature in EdmundReview.minor_features:
-            if row[minor_feature]:
-                count_minor += 1
-                break
-    return count_minor
-
-
-def import_csv(file_path):
-    reviews = []
-    with open(file_path) as csvfile: 
-        csv_reader = csv.DictReader(csvfile) 
-        for row in csv_reader:
-            reviews.append(row)
-    return reviews
-
-    
 if __name__ == "__main__":
     file_path = sys.argv[1]
     if file_path.endswith('.csv'):
