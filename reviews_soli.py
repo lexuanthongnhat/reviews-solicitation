@@ -1,5 +1,8 @@
 from collections import OrderedDict
+import random
 from abc import ABC, abstractmethod
+
+import numpy as np
 
 from data_model import Feature
 
@@ -11,8 +14,15 @@ class ReviewsSolicitation(ABC):
         num_polls: integer of how many times can ask customers (default: -1,
             i.e. len(reviews))
         seed_features: list of features name (string), if any (default: [])
+        criterion: string specifying the definition of cost. Possible values
+            are 'weighted_sum_dirichlet_variances', 'sum_dirichlet_variances'
+        step_to_cost: dict of cost change over each time of asking questions
+        name_to_feature: dict of feature's name to data_model.Feature
     """
-    ask_methods = ['ask_greedily_answer_mostly',
+    ask_methods = ['ask_greedily_answer_by_sampling',
+                   'ask_greedily_prob_answer_by_sampling',
+                   'ask_randomly_answer_by_sampling',
+                   'ask_greedily_answer_mostly',
                    'ask_greedily_answer_in_time_order',
                    'ask_greedily_prob_answer_in_time_order',
                    'ask_randomly_answer_in_time_order']
@@ -38,6 +48,27 @@ class ReviewsSolicitation(ABC):
                                                          criterion=criterion)
         self.step_to_cost[0] = Feature.product_cost(
                 self.name_to_feature.values())
+
+    @abstractmethod
+    def ask_greedily_answer_by_sampling(self):
+        """Greedily ask question, answer using sampling star's distribution 
+        of this product's reviews
+        Note: Always have answer
+        """
+
+    @abstractmethod
+    def ask_greedily_prob_answer_by_sampling(self):
+        """Ask question with probability proportional to feature's cost,
+        answer using sampling star's distribution of this product's reviews.
+        Note: Always have answer
+        """
+
+    @abstractmethod
+    def ask_randomly_answer_by_sampling(self):
+        """Ask question randomly, answer using sampling star's distribution
+        of this product's reviews.
+        Note: Always have answer
+        """
 
     @abstractmethod
     def ask_greedily_answer_mostly(self):
@@ -71,6 +102,34 @@ class ReviewsSolicitation(ABC):
         If the review doesn't have that feature, consider as no answer and
         remove review from the set."""
 
+    def pick_highest_cost_feature(self):
+        """Pick a feature with highest cost, break tie arbitrarily.
+        Returns:
+            datamodel.Feature
+        """
+        sorted_features = sorted(self.name_to_feature.values(), reverse=True)
+        highest_cost = sorted_features[0].criterion()
+        picked_features = [feature for feature in sorted_features
+                           if feature.criterion() == highest_cost]
+        return random.choice(picked_features)
+
+    def pick_feature_with_prob(self): 
+        """Ask features with probability proportional to its cost,
+        Returns:
+            datamodel.Feature
+        """
+        features = list(self.name_to_feature.values())
+        costs = np.array([feature.criterion() for feature in features])
+        weights = costs / np.sum(costs)
+        return np.random.choice(features, p=weights)
+
+    def pick_random_feature(self):
+        """Pick a feature randomly
+        Returns:
+            datamodel.Feature
+        """
+        return random.choice(list(self.name_to_feature.values()))
+
 
 class SimulationStats(object):
     """Resulting statistics of simulation
@@ -86,11 +145,18 @@ class SimulationStats(object):
         self.no_answer_count = sum([feature.no_answer_count
                                     for feature in self.final_features])
 
-    def stats_str(self, message=''):
+    def stats_str(self, message='', detail=False):
         stat_str = message + '\n'
-        costs = ['{}: {:.3f}'.format(step, cost)
-                 for step, cost in self.step_to_cost.items()]
-        stat_str += ', '.join(costs) + '\n'
+
+        if detail:
+            costs = ['{}: {:.3f}'.format(step, cost)
+                     for step, cost in self.step_to_cost.items()]
+            stat_str += ', '.join(costs) + '\n'
+        else:
+            last_poll = len(self.step_to_cost) - 1
+            stat_str += 'Final cost after {} polls: {:.3f}\n'.format(last_poll,
+                    self.step_to_cost[last_poll])
+
         stat_str += 'final_features: {}'.format(self.final_features)
         stat_str += '/no_answer_count={}'.format(self.no_answer_count)
         return stat_str

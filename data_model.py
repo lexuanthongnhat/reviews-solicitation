@@ -1,6 +1,8 @@
 import scipy.stats as stats
 from abc import ABC, abstractmethod
 
+import numpy as np
+
 
 class Review(ABC):
     """Abstract class for review
@@ -32,6 +34,26 @@ class Review(ABC):
         Returns:
             product_to_reviews (dict): product -> list of Reviews
         """
+
+    @classmethod
+    def sample_star_dist(cls, reviews):
+        """Sampling a set of reviews for the distribution of stars.
+        Args:
+            reviews: list of Review
+        Returns:
+            star_dist: np.array of star's distribution
+        """
+        if not reviews:
+            return None
+
+        star_to_count = {i: 0 for i in range(1, reviews[0].star_rank + 1)}
+        for review in reviews:
+            for feature, star in review.feature_to_star.items():
+                star_to_count[star] += 1
+        ordered_counts = [star_to_count[star]
+                          for star in range(1, reviews[0].star_rank + 1)]
+        star_dist = np.array(ordered_counts) / sum(ordered_counts)
+        return star_dist
 
 
 class Feature(object):

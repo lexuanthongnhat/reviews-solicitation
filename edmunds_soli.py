@@ -1,12 +1,55 @@
-import random
-
 import numpy as np
 
 from reviews_soli import ReviewsSolicitation, SimulationStats
-from data_model import Feature
+from data_model import Review, Feature
 
 
 class EdmundsReviewSolicitation(ReviewsSolicitation):
+    """Edmunds reviews have a fixed set of features that make the
+    simulation much simpler.  
+    """ 
+    def ask_greedily_answer_by_sampling(self):
+        """Greedily ask question, answer using sampling star's distribution 
+        of this product's reviews.
+        Note: Always have answer
+        """
+        return self.ask_then_answer_by_sampling(
+                pick_func='pick_highest_cost_feature')
+
+    def ask_greedily_prob_answer_by_sampling(self):
+        """Ask question with probability proportional to feature's cost,
+        answer using sampling star's distribution of this product's reviews.
+        Note: Always have answer
+        """
+        return self.ask_then_answer_by_sampling(
+                pick_func='pick_feature_with_prob')
+
+    def ask_randomly_answer_by_sampling(self):
+        """Ask question randomly, answer using sampling star's distribution
+        of this product's reviews.
+        Note: Always have answer
+        """
+        return self.ask_then_answer_by_sampling(
+                pick_func='pick_random_feature')
+
+    def ask_then_answer_by_sampling(self,
+                                    pick_func='pick_highest_cost_feature'):
+        """Ask question by 'pick_func', answer using sampling
+        star's distribution of this product's reviews
+        Note: Always have answer
+        """
+        star_dist = Review.sample_star_dist(self.reviews)
+        stars = np.array([i for i in range(1, len(star_dist) + 1)])
+        for i in range(self.num_polls):
+            picked_feature = self.__getattribute__(pick_func)()
+
+            answered_star = np.random.choice(stars, p=star_dist)
+            picked_feature.increase_star(answered_star, count=1)
+            self.step_to_cost[i + 1] = Feature.product_cost(
+                    self.name_to_feature.values())
+
+        return SimulationStats(self.num_polls, self.step_to_cost,
+                               list(self.name_to_feature.values()))
 
     def ask_greedily_answer_mostly(self):
         """Greedily ask questions to reduce the cost
@@ -65,32 +108,4 @@ class EdmundsReviewSolicitation(ReviewsSolicitation):
                     self.name_to_feature.values())
 
         return SimulationStats(self.num_polls, self.step_to_cost,
-                               list(self.name_to_feature.values()))
-
-    def pick_highest_cost_feature(self):
-        """Pick a feature with highest cost, break tie arbitrarily.
-        Returns:
-            datamodel.Feature
-        """
-        sorted_features = sorted(self.name_to_feature.values(), reverse=True)
-        highest_cost = sorted_features[0].criterion()
-        picked_features = [feature for feature in sorted_features
-                           if feature.criterion() == highest_cost]
-        return random.choice(picked_features)
-
-    def pick_feature_with_prob(self):
-        """Pick a feature with highest cost, break tie arbitrarily.
-        Returns:
-            datamodel.Feature
-        """
-        features = list(self.name_to_feature.values())
-        costs = np.array([feature.criterion() for feature in features])
-        weights = costs / np.sum(costs)
-        return np.random.choice(features, p=weights)
-
-    def pick_random_feature(self):
-        """Pick a feature randomly
-        Returns:
-            datamodel.Feature
-        """
-        return random.choice(list(self.name_to_feature.values()))
+                               list(self.name_to_feature.values())) 
