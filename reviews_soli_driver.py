@@ -8,7 +8,7 @@ from edmunds_soli import EdmundsReviewSolicitation
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.WARN)
 ch = logging.StreamHandler()
 ch.setFormatter(logging.Formatter(
     '%(asctime)s-%(name)s-%(levelname)s - %(message)s'))
@@ -70,6 +70,7 @@ def simulate_reviews_soli_per_product(
                 seed_features=seed_features,
                 criterion=criterion)
         sim_stat = getattr(reviews_soli_sim, ask_method)()
+        sim_stats.append(sim_stat)
         logger.info(sim_stat.stats_str(ask_method))
 
     return sim_stats
