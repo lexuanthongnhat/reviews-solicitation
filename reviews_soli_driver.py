@@ -30,7 +30,9 @@ def simulate_reviews_soli(file_path, star_rank=5,
     """
     review_cls, review_soli_sim_cls = dataset_to_review_and_sim_cls[dataset]
 
-    product_to_reviews = review_cls.import_csv(file_path, star_rank=star_rank)
+    product_to_reviews = review_cls.import_csv(file_path, star_rank=star_rank) 
+    dataset_profile = data_model.Review.profile_dataset(product_to_reviews)
+
     product_to_reviews = {key: value
                           for key, value in product_to_reviews.items()
                           if len(value) >= 970}
@@ -42,7 +44,7 @@ def simulate_reviews_soli(file_path, star_rank=5,
                 seed_features=review_cls.seed_features,
                 criterion=criterion)
 
-    return (product_to_reviews, product_to_result_stats)
+    return (product_to_reviews, product_to_result_stats, dataset_profile)
 
 
 def simulate_reviews_soli_per_product(
@@ -71,34 +73,6 @@ def simulate_reviews_soli_per_product(
         logger.info(sim_stat.stats_str(ask_method))
 
     return sim_stats
-
-
-def main(file_path):
-    reviews = data_model.import_csv(file_path)
-    print("# reviews: {}".format(len(reviews)))
-
-    print("# reviews that have minor features rating: {}".format(
-            data_model.count_reviews_with_minor(reviews)))
-
-    print("main feature rating count: {}".format(
-            data_model.count_feature_ratings(reviews)))
-    print("minor feature rating count: {}".format(
-            data_model.count_feature_ratings(reviews, 'minor_features')))
-
-    product_to_reviews = data_model.group_reviews_into_cars(reviews)
-    count = 0
-    for product, reviews in product_to_reviews.items():
-        if len(reviews) < 50:
-            continue
-        print(product)
-        print("main feature rating count: {}".format(
-                data_model.count_feature_ratings(reviews)))
-        print("minor feature rating count: {}".format(
-                data_model.count_feature_ratings(reviews, 'minor_features')))
-        if count > 2:
-            break
-        count += 1
-    print('# cars: {}'.format(len(product_to_reviews.keys())))
 
 
 if __name__ == '__main__':
