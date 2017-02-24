@@ -59,30 +59,31 @@ class Review(ABC):
     @classmethod
     def profile_dataset(cls, product_to_reviews):
         """Profiling dataset's properties.
-        Args: 
+        Args:
             product_to_reviews (dict): product -> list of Reviews
         """
-        star_rank = list(product_to_reviews.values())[0][0].star_rank 
+        star_rank = list(product_to_reviews.values())[0][0].star_rank
         num_products = len(product_to_reviews)
-        num_reviews = sum([len(reviews)
-                           for reviews in product_to_reviews.values()])
+        num_reviews_per_product = [len(reviews)
+                                   for reviews in product_to_reviews.values()]
+        num_reviews = sum(num_reviews_per_product)
 
         # histogram of the number of reviews per product
         num_reviews_to_num_products = defaultdict(int)
         for product, reviews in product_to_reviews.items():
             num_reviews_to_num_products[len(reviews)] += 1
 
-        # histogram of the number of review per feature 
+        # histogram of the number of review per feature
         feature_to_num_reviews = defaultdict(int)
         for product, reviews in product_to_reviews.items():
             for review in reviews:
                 for feature in review.feature_to_star.keys():
-                    feature_to_num_reviews[feature] += 1 
+                    feature_to_num_reviews[feature] += 1
 
-        feature_to_ave_num_reviews_per_product = {\
-                feature: num_reviews/num_products \
-                for feature, num_reviews in feature_to_num_reviews.items()}
-        
+        feature_to_ave_num_reviews_per_product = {
+            feature: num_reviews / num_products
+            for feature, num_reviews in feature_to_num_reviews.items()}
+
         # estimate m, V_0
         ave_num_feature_ratings_per_product = np.average(np.array(
             list(feature_to_ave_num_reviews_per_product.values())))
@@ -94,16 +95,17 @@ class Review(ABC):
                 for feature_name, star in review.feature_to_star.items():
                     if feature_name not in name_to_feature:
                         name_to_feature[feature_name] = Feature(
-                                feature_name,
-                                [0] * star_rank,
-                                criterion='sum_dirichlet_variances')
+                            feature_name,
+                            [0] * star_rank,
+                            criterion='sum_dirichlet_variances')
 
                     name_to_feature[feature_name].increase_star(star)
             sum_variances.extend([feature.criterion()
-                                  for feature in name_to_feature.values()]) 
+                                  for feature in name_to_feature.values()])
         global_ave_sum_variances = np.average(np.array(sum_variances))
 
         return DatasetProfile(star_rank, num_products, num_reviews,
+                              num_reviews_per_product,
                               num_reviews_to_num_products,
                               feature_to_num_reviews,
                               feature_to_ave_num_reviews_per_product,
@@ -112,9 +114,10 @@ class Review(ABC):
 
 
 class DatasetProfile(object):
-    
+
     def __init__(self,
                  star_rank, num_products, num_reviews,
+                 num_reviews_per_product,
                  num_reviews_to_num_products,
                  feature_to_num_reviews,
                  feature_to_ave_num_reviews_per_product,
@@ -123,27 +126,32 @@ class DatasetProfile(object):
         self.star_rank = star_rank
         self.num_products = num_products
         self.num_reviews = num_reviews
+        self.num_reviews_per_product = num_reviews_per_product
         self.num_reviews_to_num_products = num_reviews_to_num_products
         self.feature_to_num_reviews = feature_to_num_reviews
         self.feature_to_ave_num_reviews_per_product = \
-                feature_to_ave_num_reviews_per_product
+            feature_to_ave_num_reviews_per_product
         self.ave_num_feature_ratings_per_product = \
-                ave_num_feature_ratings_per_product
+            ave_num_feature_ratings_per_product
         self.global_ave_sum_variances = global_ave_sum_variances
-    
+
     def __str__(self):
         profile = 'Dataset of {} stars, with {} products and {} reviews\n'\
-                .format(self.star_rank, self.num_products, self.num_reviews)
+            .format(self.star_rank, self.num_products, self.num_reviews)
+        profile += 'Global average sum of variance of feature = {:.3f}'.format(
+            self.global_ave_sum_variances)
+        return profile
+
+    def full_str(self):
+        profile = self.__str__()
         profile += '# reviews -> # products: {}\n'.format(
-                self.num_reviews_to_num_products)
+            self.num_reviews_to_num_products)
         profile += 'feature -> # reviews: {}\n'.format(
-                self.feature_to_num_reviews)
+            self.feature_to_num_reviews)
         profile += 'feature -> # average reviews per product: {}\n'.format(
-                self.feature_to_ave_num_reviews_per_product)
+            self.feature_to_ave_num_reviews_per_product)
         profile += '# average feature ratings per product = {}\n'.format(
-                self.ave_num_feature_ratings_per_product)
-        profile += 'Global average sum of variance of feature = {}'.format(
-                self.global_ave_sum_variances)
+            self.ave_num_feature_ratings_per_product)
         return profile
 
 
@@ -160,6 +168,8 @@ class Feature(object):
             star.
         criterion: cost need to be optimized
     """
+    criteria = ['weighted_sum_dirichlet_variances',
+                'sum_dirichlet_variances']
 
     def __init__(self, name, ratings,
                  criterion='weighted_sum_dirichlet_variances'):
@@ -167,8 +177,6 @@ class Feature(object):
         self.ratings = ratings
         self.star_rank = len(self.ratings)
         self.no_answer_count = 0
-        # self.criterion = self.sum_dirichlet_variances
-        # self.criterion = self.weighted_sum_dirichlet_variances
         self.criterion = self.__getattribute__(criterion)
 
     def increase_star(self, star, count=1):

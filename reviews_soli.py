@@ -47,11 +47,11 @@ class ReviewsSolicitation(ABC):
             self.name_to_feature[feature_name] = Feature(feature_name, stars,
                                                          criterion=criterion)
         self.step_to_cost[0] = Feature.product_cost(
-                self.name_to_feature.values())
+            self.name_to_feature.values())
 
     @abstractmethod
     def ask_greedily_answer_by_sampling(self):
-        """Greedily ask question, answer using sampling star's distribution 
+        """Greedily ask question, answer using sampling star's distribution
         of this product's reviews
         Note: Always have answer
         """
@@ -113,7 +113,7 @@ class ReviewsSolicitation(ABC):
                            if feature.criterion() == highest_cost]
         return random.choice(picked_features)
 
-    def pick_feature_with_prob(self): 
+    def pick_feature_with_prob(self):
         """Ask features with probability proportional to its cost,
         Returns:
             datamodel.Feature
@@ -138,6 +138,7 @@ class SimulationStats(object):
         step_to_cost (dict): step (int) -> cost
         final_features (list): list of data_model.Feature
     """
+
     def __init__(self, num_polls, step_to_cost, final_features):
         self.num_polls = num_polls
         self.step_to_cost = step_to_cost
@@ -154,8 +155,8 @@ class SimulationStats(object):
             stat_str += ', '.join(costs) + '\n'
         else:
             last_poll = len(self.step_to_cost) - 1
-            stat_str += 'Final cost after {} polls: {:.3f}\n'.format(last_poll,
-                    self.step_to_cost[last_poll])
+            stat_str += 'Final cost after {} polls: {:.3f}\n'.format(
+                last_poll, self.step_to_cost[last_poll])
 
         stat_str += 'final_features: {}'.format(self.final_features)
         stat_str += '/no_answer_count={}'.format(self.no_answer_count)

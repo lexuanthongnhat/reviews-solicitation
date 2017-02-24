@@ -1,8 +1,5 @@
-import sys
-import inspect
 import csv
 from collections import defaultdict
-from collections import OrderedDict
 from dateutil.parser import parse
 
 from data_model import Review
@@ -103,7 +100,8 @@ class Car(object):
         model
         year
         style_id
-    """ 
+    """
+
     def __init__(self, make, model, year, style_id):
         self.make = make
         self.model = model

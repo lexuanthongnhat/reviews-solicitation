@@ -16,8 +16,8 @@ logger.addHandler(ch)
 
 
 dataset_to_review_and_sim_cls = {
-        'edmunds': (EdmundsReview, EdmundsReviewSolicitation)
-        }
+    'edmunds': (EdmundsReview, EdmundsReviewSolicitation)
+}
 
 
 def simulate_reviews_soli(file_path, star_rank=5,
@@ -27,24 +27,27 @@ def simulate_reviews_soli(file_path, star_rank=5,
     Args:
         file_path (string)
         star_rank (int): e.g. 5 means 1, 2, 3, 4 and 5 stars system
+    Returns:
+        product_to_result_stats: dict of product -> sim_stats (list of
+                                 SimulationStats, corresponding to
+                                 ReviewsSolicitation.ask_methods)
     """
     review_cls, review_soli_sim_cls = dataset_to_review_and_sim_cls[dataset]
 
-    product_to_reviews = review_cls.import_csv(file_path, star_rank=star_rank) 
-    dataset_profile = data_model.Review.profile_dataset(product_to_reviews)
-
+    product_to_reviews = review_cls.import_csv(file_path, star_rank=star_rank)
     product_to_reviews = {key: value
                           for key, value in product_to_reviews.items()
                           if len(value) >= 970}
+
     product_to_result_stats = {}
     for product, reviews in product_to_reviews.items():
         product_to_result_stats[product] = simulate_reviews_soli_per_product(
-                reviews, review_soli_sim_cls,
-                num_polls=100,
-                seed_features=review_cls.seed_features,
-                criterion=criterion)
+            reviews, review_soli_sim_cls,
+            num_polls=100,
+            seed_features=review_cls.seed_features,
+            criterion=criterion)
 
-    return (product_to_reviews, product_to_result_stats, dataset_profile)
+    return product_to_result_stats
 
 
 def simulate_reviews_soli_per_product(
@@ -60,20 +63,36 @@ def simulate_reviews_soli_per_product(
             (default: -1, means the number of reviews available for simulation)
         seed_features: list of product's features, if know upfront
     Returns:
-        (greedy_stats, random_stats): tuple of SimulationStats
+        sim_stats: list of SimulationStats, corresponding to
+                   ReviewsSolicitation.ask_methods
     """
     sim_stats = []
     for ask_method in ReviewsSolicitation.ask_methods:
         reviews_soli_sim = review_soli_sim_cls(
-                reviews,
-                num_polls=num_polls,
-                seed_features=seed_features,
-                criterion=criterion)
+            reviews,
+            num_polls=num_polls,
+            seed_features=seed_features,
+            criterion=criterion)
         sim_stat = getattr(reviews_soli_sim, ask_method)()
         sim_stats.append(sim_stat)
         logger.info(sim_stat.stats_str(ask_method))
 
     return sim_stats
+
+
+def profile_dataset(file_path, star_rank=5, dataset='edmunds'):
+    """Profiling the dataset
+    Args:
+        file_path (string)
+        star_rank (int): e.g. 5 means 1, 2, 3, 4 and 5 stars system
+    Returns:
+        dataset_profile: data_model.DatasetProfile object
+    """
+    review_cls, _ = dataset_to_review_and_sim_cls[dataset]
+
+    product_to_reviews = review_cls.import_csv(file_path, star_rank=star_rank)
+    dataset_profile = data_model.Review.profile_dataset(product_to_reviews)
+    return dataset_profile
 
 
 if __name__ == '__main__':
