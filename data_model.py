@@ -138,6 +138,8 @@ class DatasetProfile(object):
     def __str__(self):
         profile = 'Dataset of {} stars, with {} products and {} reviews\n'\
             .format(self.star_rank, self.num_products, self.num_reviews)
+        profile += '# average feature ratings per product = {:.3f}\n'.format(
+            self.ave_num_feature_ratings_per_product)
         profile += 'Global average sum of variance of feature = {:.3f}'.format(
             self.global_ave_sum_variances)
         return profile
@@ -150,8 +152,6 @@ class DatasetProfile(object):
             self.feature_to_num_reviews)
         profile += 'feature -> # average reviews per product: {}\n'.format(
             self.feature_to_ave_num_reviews_per_product)
-        profile += '# average feature ratings per product = {}\n'.format(
-            self.ave_num_feature_ratings_per_product)
         return profile
 
 
@@ -162,22 +162,32 @@ class Feature(object):
         'feature1 > feature2' means cost of feature 1 > cost of feature 2
 
     Attributes:
-        name (string)
-        ratings (list): e.g., [3, 0, 6] corresponds to 3, 0, 6 ratings for
-            1, 2, 3 stars respectively. Require 0 with no ratings for that
-            star.
-        criterion: cost need to be optimized
+        name: string
+        ratings: list
+            e.g., [3, 0, 6] corresponds to 3, 0, 6 ratings for 1, 2, 3 stars
+            respectively. Require 0 with no ratings for that star.
+        criterion: string, default='weighted_sum_dirichlet_variances'
+            cost need to be optimized
+        prior_count: string, default=None
+            only when criterion='weighted_sum_dirichlet_variances'
+        prior_cost: string, default=None
+            only when criterion='weighted_sum_dirichlet_variances'
     """
     criteria = ['weighted_sum_dirichlet_variances',
                 'sum_dirichlet_variances']
 
     def __init__(self, name, ratings,
-                 criterion='weighted_sum_dirichlet_variances'):
+                 criterion='weighted_sum_dirichlet_variances',
+                 prior_count=None,
+                 prior_cost=None):
+
         self.name = name
         self.ratings = ratings
         self.star_rank = len(self.ratings)
         self.no_answer_count = 0
         self.criterion = self.__getattribute__(criterion)
+        self.prior_count = prior_count
+        self.prior_cost = prior_cost
 
     def increase_star(self, star, count=1):
         if star < 1 or star > len(self.ratings):
@@ -220,11 +230,13 @@ class Feature(object):
         return sum(stats.dirichlet.var(alphas))
 
     def weighted_sum_dirichlet_variances(self):
-        prior_count = self.star_rank
-        prior_sum_variance = sum(stats.dirichlet.var([1] * prior_count))
+        if not self.prior_cost or not self.prior_count:
+            self.prior_count = self.star_rank
+            self.prior_cost = sum(stats.dirichlet.var([1] * self.prior_count))
+
         weighted_sum = (sum(self.ratings) * self.sum_dirichlet_variances()
-                        + prior_count * prior_sum_variance) / \
-            (sum(self.ratings) + prior_count)
+                        + self.prior_count * self.prior_cost) / \
+            (sum(self.ratings) + self.prior_count)
         return weighted_sum
 
     @classmethod

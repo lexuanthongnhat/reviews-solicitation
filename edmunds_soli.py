@@ -9,32 +9,31 @@ class EdmundsReviewSolicitation(ReviewsSolicitation):
     simulation much simpler.
     """
 
-    def ask_greedily_answer_by_sampling(self):
+    def ask_greedily_answer_by_gen(self):
         """Greedily ask question, answer using sampling star's distribution
         of this product's reviews.
         Note: Always have answer
         """
-        return self.ask_then_answer_by_sampling(
+        return self.ask_then_answer_by_gen(
             pick_func='pick_highest_cost_feature')
 
-    def ask_greedily_prob_answer_by_sampling(self):
+    def ask_greedily_prob_answer_by_gen(self):
         """Ask question with probability proportional to feature's cost,
         answer using sampling star's distribution of this product's reviews.
         Note: Always have answer
         """
-        return self.ask_then_answer_by_sampling(
+        return self.ask_then_answer_by_gen(
             pick_func='pick_feature_with_prob')
 
-    def ask_randomly_answer_by_sampling(self):
+    def ask_randomly_answer_by_gen(self):
         """Ask question randomly, answer using sampling star's distribution
         of this product's reviews.
         Note: Always have answer
         """
-        return self.ask_then_answer_by_sampling(
+        return self.ask_then_answer_by_gen(
             pick_func='pick_random_feature')
 
-    def ask_then_answer_by_sampling(self,
-                                    pick_func='pick_highest_cost_feature'):
+    def ask_then_answer_by_gen(self, pick_func='pick_highest_cost_feature'):
         """Ask question by 'pick_func', answer using sampling
         star's distribution of this product's reviews
         Note: Always have answer

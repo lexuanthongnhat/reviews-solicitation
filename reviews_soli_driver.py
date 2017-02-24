@@ -22,15 +22,24 @@ dataset_to_review_and_sim_cls = {
 
 def simulate_reviews_soli(file_path, star_rank=5,
                           criterion='weighted_sum_dirichlet_variances',
+                          prior_count=None,
+                          prior_cost=None,
                           dataset='edmunds'):
     """Simulate the asking process
     Args:
-        file_path (string)
-        star_rank (int): e.g. 5 means 1, 2, 3, 4 and 5 stars system
+        file_path: string
+        star_rank: int
+            e.g. 5 means 1, 2, 3, 4 and 5 stars system
+        criterion: string, default='weighted_sum_dirichlet_variances'
+        prior_count: string, default=None
+            only when criterion='weighted_sum_dirichlet_variances'
+        prior_cost: string, default=None
+            only when criterion='weighted_sum_dirichlet_variances'
+        dataset: string, default='edmunds'
     Returns:
-        product_to_result_stats: dict of product -> sim_stats (list of
-                                 SimulationStats, corresponding to
-                                 ReviewsSolicitation.ask_methods)
+        product_to_result_stats: dict
+            product -> sim_stats (list of SimulationStats, corresponding to
+            ReviewsSolicitation.ask_methods)
     """
     review_cls, review_soli_sim_cls = dataset_to_review_and_sim_cls[dataset]
 
@@ -53,7 +62,9 @@ def simulate_reviews_soli(file_path, star_rank=5,
 def simulate_reviews_soli_per_product(
         reviews, review_soli_sim_cls,
         num_polls=-1, seed_features=[],
-        criterion='weighted_sum_dirichlet_variances'):
+        criterion='weighted_sum_dirichlet_variances',
+        prior_count=None,
+        prior_cost=None):
     """
     Args:
         reviews: list of Review
@@ -62,6 +73,11 @@ def simulate_reviews_soli_per_product(
         num_polls: integer of the number of times (reviews) to ask customers
             (default: -1, means the number of reviews available for simulation)
         seed_features: list of product's features, if know upfront
+        criterion: string, default='weighted_sum_dirichlet_variances'
+        prior_count: string, default=None
+            only when criterion='weighted_sum_dirichlet_variances'
+        prior_cost: string, default=None
+            only when criterion='weighted_sum_dirichlet_variances'
     Returns:
         sim_stats: list of SimulationStats, corresponding to
                    ReviewsSolicitation.ask_methods
@@ -101,4 +117,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     logger.debug("args: {}".format(args))
 
-    simulate_reviews_soli(args.input)
+    dataset_profile = profile_dataset(args.input)
+    simulate_reviews_soli(
+        args.input,
+        prior_count=dataset_profile.ave_num_feature_ratings_per_product,
+        prior_cost=dataset_profile.global_ave_sum_variances)

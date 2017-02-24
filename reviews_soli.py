@@ -11,60 +11,74 @@ class ReviewsSolicitation(ABC):
     """
     Attributes:
         reviews: list of data_model.Review
-        num_polls: integer of how many times can ask customers (default: -1,
-            i.e. len(reviews))
+        num_polls: integer, default=-1 (i.e. len(reviews))
+            how many times can ask customers
         seed_features: list of features name (string), if any (default: [])
-        criterion: string specifying the definition of cost. Possible values
-            are 'weighted_sum_dirichlet_variances', 'sum_dirichlet_variances'
-        step_to_cost: dict of cost change over each time of asking questions
-        name_to_feature: dict of feature's name to data_model.Feature
+        criterion: string
+            the definition of cost. Possible values are
+            'weighted_sum_dirichlet_variances', 'sum_dirichlet_variances'
+        prior_count: string, default=None
+            only when criterion='weighted_sum_dirichlet_variances'
+        prior_cost: string, default=None
+            only when criterion='weighted_sum_dirichlet_variances'
+        step_to_cost: dict
+            cost change over each time of asking questions
+        name_to_feature: dict
+            feature's name -> data_model.Feature
     """
-    ask_methods = ['ask_greedily_answer_by_sampling',
-                   'ask_greedily_prob_answer_by_sampling',
-                   'ask_randomly_answer_by_sampling',
+    ask_methods = ['ask_greedily_answer_by_gen',
+                   'ask_greedily_prob_answer_by_gen',
+                   'ask_randomly_answer_by_gen',
                    'ask_greedily_answer_mostly',
                    'ask_greedily_answer_in_time_order',
                    'ask_greedily_prob_answer_in_time_order',
                    'ask_randomly_answer_in_time_order']
 
     def __init__(self, reviews, num_polls=20, seed_features=[],
-                 criterion='weighted_sum_dirichlet_variances'):
+                 criterion='weighted_sum_dirichlet_variances',
+                 prior_count=None,
+                 prior_cost=None):
         self.original_reviews = reviews
         self.reviews = reviews.copy()
         self.num_polls = num_polls if num_polls <= len(reviews)\
             and num_polls > 0 else len(reviews)
         self.seed_features = seed_features
-        self.__init_simulation_stats(criterion=criterion)
+        self.__init_simulation_stats(criterion=criterion,
+                                     prior_count=prior_count,
+                                     prior_cost=prior_cost)
 
     def __init_simulation_stats(self,
-                                criterion='weighted_sum_dirichlet_variances'):
+                                criterion='weighted_sum_dirichlet_variances',
+                                prior_count=None,
+                                prior_cost=None):
         self.step_to_cost = OrderedDict()
         self.name_to_feature = {}    # feature_name -> feature (Feature)
 
         # Initiate all features
         for feature_name in self.seed_features:
             stars = [0] * self.reviews[0].star_rank
-            self.name_to_feature[feature_name] = Feature(feature_name, stars,
-                                                         criterion=criterion)
+            self.name_to_feature[feature_name] = Feature(
+                    feature_name, stars, criterion=criterion,
+                    prior_count=prior_count, prior_cost=prior_cost)
         self.step_to_cost[0] = Feature.product_cost(
             self.name_to_feature.values())
 
     @abstractmethod
-    def ask_greedily_answer_by_sampling(self):
+    def ask_greedily_answer_by_gen(self):
         """Greedily ask question, answer using sampling star's distribution
         of this product's reviews
         Note: Always have answer
         """
 
     @abstractmethod
-    def ask_greedily_prob_answer_by_sampling(self):
+    def ask_greedily_prob_answer_by_gen(self):
         """Ask question with probability proportional to feature's cost,
         answer using sampling star's distribution of this product's reviews.
         Note: Always have answer
         """
 
     @abstractmethod
-    def ask_randomly_answer_by_sampling(self):
+    def ask_randomly_answer_by_gen(self):
         """Ask question randomly, answer using sampling star's distribution
         of this product's reviews.
         Note: Always have answer
