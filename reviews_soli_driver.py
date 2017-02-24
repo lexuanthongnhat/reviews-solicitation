@@ -21,6 +21,8 @@ dataset_to_review_and_sim_cls = {
 
 
 def simulate_reviews_soli(file_path, star_rank=5,
+                          num_polls=-1,
+                          lower_num_reviews=200,
                           criterion='weighted_sum_dirichlet_variances',
                           prior_count=None,
                           prior_cost=None,
@@ -30,6 +32,10 @@ def simulate_reviews_soli(file_path, star_rank=5,
         file_path: string
         star_rank: int
             e.g. 5 means 1, 2, 3, 4 and 5 stars system
+        num_polls: int, default=-1 (i.e. number of reviews of the product)
+            Number of polls (customers) to ask
+        lower_num_reviews: int, default=200
+            Only consider products with more than this lower bound into
         criterion: string, default='weighted_sum_dirichlet_variances'
         prior_count: string, default=None
             only when criterion='weighted_sum_dirichlet_variances'
@@ -46,13 +52,13 @@ def simulate_reviews_soli(file_path, star_rank=5,
     product_to_reviews = review_cls.import_csv(file_path, star_rank=star_rank)
     product_to_reviews = {key: value
                           for key, value in product_to_reviews.items()
-                          if len(value) >= 970}
+                          if len(value) >= lower_num_reviews}
 
     product_to_result_stats = {}
     for product, reviews in product_to_reviews.items():
         product_to_result_stats[product] = simulate_reviews_soli_per_product(
             reviews, review_soli_sim_cls,
-            num_polls=100,
+            num_polls=num_polls,
             seed_features=review_cls.seed_features,
             criterion=criterion)
 
@@ -114,11 +120,22 @@ def profile_dataset(file_path, star_rank=5, dataset='edmunds'):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Reviews Solicitation")
     parser.add_argument("--input", help="dataset input path")
+    parser.add_argument(
+            "--lower-num-reviews", type=int, default=200,
+            help="Only consider products with more than this lower bound into "
+            " experiment (default=200)")
+    parser.add_argument(
+            "--num-polls", type=int, default=-1,
+            help="Number of polls (customers) to ask (default=-1, i.e. number "
+            "of reviews of the product)")
+
     args = parser.parse_args()
     logger.debug("args: {}".format(args))
 
     dataset_profile = profile_dataset(args.input)
     simulate_reviews_soli(
         args.input,
+        num_polls=args.num_polls,
+        lower_num_reviews=args.lower_num_reviews,
         prior_count=dataset_profile.ave_num_feature_ratings_per_product,
         prior_cost=dataset_profile.global_ave_sum_variances)
