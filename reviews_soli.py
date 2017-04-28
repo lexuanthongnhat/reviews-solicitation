@@ -13,6 +13,8 @@ class ReviewsSolicitation(ABC):
         reviews: list of data_model.Review
         num_polls: integer, default=-1 (i.e. len(reviews))
             how many times can ask customers
+        num_questions: int, default=1,
+            Number of questions to ask a customer
         seed_features: list of features name (string), if any (default: [])
         criterion: string
             the definition of cost. Possible values are
@@ -34,7 +36,10 @@ class ReviewsSolicitation(ABC):
                    'ask_greedily_prob_answer_in_time_order',
                    'ask_randomly_answer_in_time_order']
 
-    def __init__(self, reviews, num_polls=20, seed_features=[],
+    def __init__(self, reviews,
+                 num_polls=20,
+                 num_questions=1,
+                 seed_features=[],
                  criterion='weighted_sum_dirichlet_variances',
                  prior_count=None,
                  prior_cost=None):
@@ -42,6 +47,7 @@ class ReviewsSolicitation(ABC):
         self.reviews = reviews.copy()
         self.num_polls = num_polls if num_polls <= len(reviews)\
             and num_polls > 0 else len(reviews)
+        self.num_questions = num_questions
         self.seed_features = seed_features
         self.__init_simulation_stats(criterion=criterion,
                                      prior_count=prior_count,
@@ -62,6 +68,28 @@ class ReviewsSolicitation(ABC):
                     prior_count=prior_count, prior_cost=prior_cost)
         self.step_to_cost[0] = Feature.product_cost(
             self.name_to_feature.values())
+
+    def simulate(self, ask_method):
+        """Simulate the asking-aswering process."""
+        for i in range(self.num_polls):
+            # Keep track in case of answer_in_time_order, i.e. get all answers
+            # from a single real review
+            self.num_waiting_answers = self.num_questions
+            for q in range(self.num_questions):
+                picked_feature, answered_star = self.__getattribute__(
+                        ask_method)()
+                # Update ratings, rating's uncertainty
+                if answered_star:
+                    picked_feature.increase_star(answered_star, count=1)
+                else:
+                    picked_feature.no_answer_count += 1
+            self.step_to_cost[i + 1] = Feature.product_cost(
+                self.name_to_feature.values())
+
+        return SimulationStats(self.num_polls,
+                               self.num_questions,
+                               self.step_to_cost,
+                               list(self.name_to_feature.values()))
 
     @abstractmethod
     def ask_greedily_answer_by_gen(self):
@@ -149,11 +177,12 @@ class SimulationStats(object):
     """Resulting statistics of simulation
     Attributes:
         num_polls (int): how many time can ask customers
+        num_questions (int): number of question per customer
         step_to_cost (dict): step (int) -> cost
         final_features (list): list of data_model.Feature
     """
 
-    def __init__(self, num_polls, step_to_cost, final_features):
+    def __init__(self, num_polls, num_questions, step_to_cost, final_features):
         self.num_polls = num_polls
         self.step_to_cost = step_to_cost
         self.final_features = list(final_features)

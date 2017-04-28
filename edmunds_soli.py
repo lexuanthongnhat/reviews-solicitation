@@ -39,17 +39,11 @@ class EdmundsReviewSolicitation(ReviewsSolicitation):
         Note: Always have answer
         """
         star_dist = Review.sample_star_dist(self.reviews)
-        stars = np.array([i for i in range(1, len(star_dist) + 1)])
-        for i in range(self.num_polls):
-            picked_feature = self.__getattribute__(pick_func)()
+        stars = np.arange(1, len(star_dist) + 1, 1)
 
-            answered_star = np.random.choice(stars, p=star_dist)
-            picked_feature.increase_star(answered_star, count=1)
-            self.step_to_cost[i + 1] = Feature.product_cost(
-                self.name_to_feature.values())
-
-        return SimulationStats(self.num_polls, self.step_to_cost,
-                               list(self.name_to_feature.values()))
+        picked_feature = self.__getattribute__(pick_func)()
+        answered_star = np.random.choice(stars, p=star_dist)
+        return (picked_feature, answered_star)
 
     def ask_greedily_answer_mostly(self):
         """Greedily ask questions to reduce the cost
@@ -57,27 +51,17 @@ class EdmundsReviewSolicitation(ReviewsSolicitation):
             answer_possibility: float [0, 1] representing the possibility
                 that customers answer a question
         """
-        # Iteratively picking feature to ask customers
-        for i in range(self.num_polls):
-            picked_feature = self.pick_highest_cost_feature()
+        picked_feature = self.pick_highest_cost_feature()
 
-            answered_review = None
-            for review in self.reviews:
-                if picked_feature.name in review.feature_to_star.keys():
-                    answered_review = review
-                    answered_star = review.feature_to_star[picked_feature.name]
-                    picked_feature.increase_star(answered_star, count=1)
-                    self.reviews.remove(answered_review)
-                    break
+        for review in self.reviews:
+            if picked_feature.name in review.feature_to_star.keys():
+                answered_star = review.feature_to_star[picked_feature.name]
+                self.reviews.remove(review)
+                return (picked_feature, answered_star)
 
-            if not answered_review:
-                picked_feature.no_answer_count += 1
-                self.reviews.extend(self.original_reviews.copy())
-            self.step_to_cost[i + 1] = Feature.product_cost(
-                self.name_to_feature.values())
-
-        return SimulationStats(self.num_polls, self.step_to_cost,
-                               list(self.name_to_feature.values()))
+        # No answer for this feature
+        self.reviews.extend(self.original_reviews.copy())
+        return (picked_feature, None)
 
     def ask_greedily_answer_in_time_order(self):
         return self.ask_then_answer_in_time_order(
@@ -93,19 +77,16 @@ class EdmundsReviewSolicitation(ReviewsSolicitation):
 
     def ask_then_answer_in_time_order(self, pick_func='pick_random_feature'):
         """Ask questions using pick_func, answer in time order."""
-        for i in range(self.num_polls):
-            picked_feature = self.__getattribute__(pick_func)()
-            answered_review = self.reviews.pop(0)   # earliest review
+        picked_feature = self.__getattribute__(pick_func)()
 
-            if picked_feature.name in answered_review.feature_to_star.keys():
-                answered_star = answered_review.feature_to_star[
-                    picked_feature.name]
-                picked_feature.increase_star(answered_star, count=1)
-            else:
-                picked_feature.no_answer_count += 1
-
-            self.step_to_cost[i + 1] = Feature.product_cost(
-                self.name_to_feature.values())
-
-        return SimulationStats(self.num_polls, self.step_to_cost,
-                               list(self.name_to_feature.values()))
+        answered_review = self.reviews[0]   # earliest review
+        answered_star = None
+        if picked_feature.name in answered_review.feature_to_star.keys():
+            answered_star = answered_review.feature_to_star[
+                picked_feature.name]
+        self.num_waiting_answers -= 1
+        
+        if self.num_waiting_answers <= 0:
+            self.reviews.pop(0)
+            
+        return (picked_feature, answered_star)
