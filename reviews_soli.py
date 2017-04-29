@@ -28,13 +28,12 @@ class ReviewsSolicitation(ABC):
         name_to_feature: dict
             feature's name -> data_model.Feature
     """
-    ask_methods = ['ask_greedily_answer_by_gen',
-                   'ask_greedily_prob_answer_by_gen',
-                   'ask_randomly_answer_by_gen',
-                   'ask_greedily_answer_mostly',
-                   'ask_greedily_answer_in_time_order',
-                   'ask_greedily_prob_answer_in_time_order',
-                   'ask_randomly_answer_in_time_order']
+    pick_methods = ['pick_highest_cost',
+                    'pick_with_prob',
+                    'pick_random']
+
+    answer_methods = ['answer_by_gen',
+                      'answer_in_time_order']
 
     def __init__(self, reviews,
                  num_polls=20,
@@ -69,15 +68,17 @@ class ReviewsSolicitation(ABC):
         self.step_to_cost[0] = Feature.product_cost(
             self.name_to_feature.values())
 
-    def simulate(self, ask_method):
+    def simulate(self, pick_method, answer_method):
         """Simulate the asking-aswering process."""
         for i in range(self.num_polls):
             # Keep track in case of answer_in_time_order, i.e. get all answers
             # from a single real review
             self.num_waiting_answers = self.num_questions
             for q in range(self.num_questions):
-                picked_feature, answered_star = self.__getattribute__(
-                        ask_method)()
+                picked_feature = self.__getattribute__(pick_method)()
+                answered_star = self.__getattribute__(answer_method)(
+                        picked_feature)
+
                 # Update ratings, rating's uncertainty
                 if answered_star:
                     picked_feature.increase_star(answered_star, count=1)
@@ -92,59 +93,25 @@ class ReviewsSolicitation(ABC):
                                list(self.name_to_feature.values()))
 
     @abstractmethod
-    def ask_greedily_answer_by_gen(self):
-        """Greedily ask question, answer using sampling star's distribution
-        of this product's reviews
+    def answer_by_gen(self, picked_feature):
+        """Answer using sampling star's distribution of this product's reviews.
         Note: Always have answer
+        Args:
+            picked_feature: datamodel.Feature, returned by pick_method
+        Returns:
+            answered_star: int
         """
 
     @abstractmethod
-    def ask_greedily_prob_answer_by_gen(self):
-        """Ask question with probability proportional to feature's cost,
-        answer using sampling star's distribution of this product's reviews.
-        Note: Always have answer
+    def answer_in_time_order(self, picked_feature):
+        """Answer using real reviews sorted in time order.
+        Args:
+            picked_feature: datamodel.Feature, returned by pick_method
+        Returns:
+            answered_star: int
         """
 
-    @abstractmethod
-    def ask_randomly_answer_by_gen(self):
-        """Ask question randomly, answer using sampling star's distribution
-        of this product's reviews.
-        Note: Always have answer
-        """
-
-    @abstractmethod
-    def ask_greedily_answer_mostly(self):
-        """Ask 'the most costly' features, then answer by reviews that
-        contains the features.
-
-        If no review has the features, consider as no answer. Then extend
-        the current reviews set by original reviews set."""
-
-    @abstractmethod
-    def ask_greedily_answer_in_time_order(self):
-        """Ask 'the most costly' features, then answer by reviews ordered
-        chronologically.
-
-        If the review doesn't have that feature, consider as no answer and
-        remove review from the set."""
-
-    @abstractmethod
-    def ask_greedily_prob_answer_in_time_order(self):
-        """Ask features with probability proportional to its cost,
-        then answer by reviews ordered chronologically.
-
-        If the review doesn't have that feature, consider as no answer and
-        remove review from the set."""
-
-    @abstractmethod
-    def ask_randomly_answer_in_time_order(self):
-        """Ask features randomly, then answer by reviews ordered
-        chronologically.
-
-        If the review doesn't have that feature, consider as no answer and
-        remove review from the set."""
-
-    def pick_highest_cost_feature(self):
+    def pick_highest_cost(self):
         """Pick a feature with highest cost, break tie arbitrarily.
         Returns:
             datamodel.Feature
@@ -155,7 +122,7 @@ class ReviewsSolicitation(ABC):
                            if feature.criterion() == highest_cost]
         return random.choice(picked_features)
 
-    def pick_feature_with_prob(self):
+    def pick_with_prob(self):
         """Ask features with probability proportional to its cost,
         Returns:
             datamodel.Feature
@@ -165,7 +132,7 @@ class ReviewsSolicitation(ABC):
         weights = costs / np.sum(costs)
         return np.random.choice(features, p=weights)
 
-    def pick_random_feature(self):
+    def pick_random(self):
         """Pick a feature randomly
         Returns:
             datamodel.Feature

@@ -1,5 +1,6 @@
 import logging
 import argparse
+import itertools
 
 import data_model
 from reviews_soli import ReviewsSolicitation
@@ -49,7 +50,7 @@ def simulate_reviews_soli(file_path,
     Returns:
         product_to_result_stats: dict
             product -> sim_stats (list of SimulationStats, corresponding to
-            ReviewsSolicitation.ask_methods)
+            ReviewsSolicitation.pick_methods/answer_methods)
     """
     review_cls, review_soli_sim_cls = dataset_to_review_and_sim_cls[dataset]
 
@@ -96,19 +97,21 @@ def simulate_reviews_soli_per_product(
             only when criterion='weighted_sum_dirichlet_variances'
     Returns:
         sim_stats: list of SimulationStats, corresponding to
-                   ReviewsSolicitation.ask_methods
+                   ReviewsSolicitation.pick_methods/answer_methods
     """
     sim_stats = []
-    for ask_method in ReviewsSolicitation.ask_methods:
+    for pick_method, answer_method in itertools.product(
+            ReviewsSolicitation.pick_methods,
+            ReviewsSolicitation.answer_methods):
         reviews_soli_sim = review_soli_sim_cls(
             reviews,
             num_polls=num_polls,
             num_questions=num_questions,
             seed_features=seed_features,
             criterion=criterion)
-        sim_stat = reviews_soli_sim.simulate(ask_method)
+        sim_stat = reviews_soli_sim.simulate(pick_method, answer_method)
         sim_stats.append(sim_stat)
-        logger.debug(sim_stat.stats_str(ask_method))
+        logger.debug(sim_stat.stats_str(pick_method + ' - ' + answer_method))
 
     return sim_stats
 
