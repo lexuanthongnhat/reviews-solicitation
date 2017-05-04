@@ -40,7 +40,8 @@ class UncertaintyBook(object):
                  criterion='expected_rating_var',
                  weighting=False,
                  correlating=False,
-                 dataset_profile=None):
+                 dataset_profile=None,
+                 confidence_level=0.95):
         if star_rank < 2 or feature_count < 1:
             raise ValueError('Invalid values of star_rank (>= 2) or '
                              'feature_count (>= 1)')
@@ -52,6 +53,7 @@ class UncertaintyBook(object):
         self.correlating = correlating
         self.weighting = weighting
         self.dataset_profile = dataset_profile
+        self.confidence_level = confidence_level
         if weighting and dataset_profile:
             self.prior_rating_count = \
                 dataset_profile.feature_rating_count_average
@@ -195,6 +197,20 @@ def pearson_cor(count_table):
     cov = (row_col_var * star_weights).sum().sum()
 
     return cov / np.sqrt(rvar * cvar)
+
+
+def confidence_interval_len(ratings, confidence_level=0.95):
+    """Confidence interval length using Student distribution
+    Args:
+        ratings: list, numpy array of star
+        confidence_level: float, default=0.95
+    """
+    n, _, mean, variance, _, _ = stats.describe(ratings)
+    sd = np.sqrt(variance)
+    lower, upper = stats.t.interval(confidence_level, n - 1,
+                                    loc=mean, scale=sd / np.sqrt(n))
+    print(lower, upper)
+    return upper - lower
 
 
 def simple_pearson_cor(count_table):

@@ -170,6 +170,9 @@ if __name__ == '__main__':
             "--question-count", type=int, default=1,
             help="Number of questions to ask a customer (default=1)")
     parser.add_argument(
+            "--confidence-level", type=float, default=0.95,
+            help="Confidence level for confidence interval metric (default=1)")
+    parser.add_argument(
             "--review-count-lowbound", type=int, default=200,
             help="Only consider products with more than this lower bound into "
             " experiment (default=200)")
@@ -199,4 +202,5 @@ if __name__ == '__main__':
                               criterion=metric,
                               weighting=weighting,
                               correlating=correlating,
-                              dataset_profile=dataset_profile)
+                              dataset_profile=dataset_profile,
+                              confidence_level=args.confidence_level)

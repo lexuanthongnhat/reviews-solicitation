@@ -70,7 +70,8 @@ class ReviewsSolicitation(ABC):
                 criterion=criterion,
                 weighting=weighting,
                 correlating=correlating,
-                dataset_profile=dataset_profile)
+                dataset_profile=dataset_profile,
+                confidence_level=kargs['confidence_level'])
         self.step_to_cost = OrderedDict()
         self.uncertainty_book.refresh_uncertainty()
         self.step_to_cost[0] = self.uncertainty_book.uncertainty_total()
