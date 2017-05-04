@@ -1,7 +1,7 @@
 import numpy as np
 
-from reviews_soli import ReviewsSolicitation, SimulationStats
-from data_model import Review, Feature
+from reviews_soli import ReviewsSolicitation
+from data_model import Review
 
 
 class EdmundsReviewSolicitation(ReviewsSolicitation):
@@ -35,7 +35,7 @@ class EdmundsReviewSolicitation(ReviewsSolicitation):
             answered_star = answered_review.feature_to_star[
                 picked_feature.name]
         self.num_waiting_answers -= 1
-        
+
         if self.num_waiting_answers <= 0:
             self.reviews.pop(0)
         return answered_star

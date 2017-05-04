@@ -1,96 +1,117 @@
 from collections import OrderedDict
-import random
 from abc import ABC, abstractmethod
 
 import numpy as np
 
 from data_model import Feature
+from uncertainty import UncertaintyBook
 
 
 class ReviewsSolicitation(ABC):
     """
     Attributes:
         reviews: list of data_model.Review
-        num_polls: integer, default=-1 (i.e. len(reviews))
+        poll_count: integer, default=-1 (i.e. len(reviews))
             how many times can ask customers
-        num_questions: int, default=1,
+        question_count: int, default=1,
             Number of questions to ask a customer
         seed_features: list of features name (string), if any (default: [])
-        criterion: string
-            the definition of cost. Possible values are
-            'weighted_sum_dirichlet_variances', 'sum_dirichlet_variances'
-        prior_count: string, default=None
-            only when criterion='weighted_sum_dirichlet_variances'
-        prior_cost: string, default=None
-            only when criterion='weighted_sum_dirichlet_variances'
+        criterion: string, default='expected_rating_var'
+            uncertainty metric
+        weighting: Boolean, default=False
+            weighting uncertainty metric using prior/global ratings
+        correlating: Boolean, default=False
+            consider a feature's uncertainty using correlated features
+        dataset_profile: SimulationStats object, default=None
+            dataset's profile
         step_to_cost: dict
             cost change over each time of asking questions
-        name_to_feature: dict
-            feature's name -> data_model.Feature
     """
-    pick_methods = ['pick_highest_cost',
-                    'pick_with_prob',
-                    'pick_random']
+    # pick_methods = ['pick_highest_cost',
+                    # 'pick_with_prob',
+                    # 'pick_random']
 
     answer_methods = ['answer_by_gen',
                       'answer_in_time_order']
 
+    pick_methods = ['pick_highest_cost']
+    # answer_methods = ['answer_by_gen']
+
     def __init__(self, reviews,
-                 num_polls=20,
-                 num_questions=1,
+                 poll_count=20,
+                 question_count=1,
                  seed_features=[],
-                 criterion='weighted_sum_dirichlet_variances',
-                 prior_count=None,
-                 prior_cost=None):
+                 criterion='expected_rating_var',
+                 weighting=False,
+                 correlating=False,
+                 dataset_profile=None,
+                 **kargs):
+        if len(reviews) < 1:
+            raise ValueError('Empty or None reviews')
         self.original_reviews = reviews
         self.reviews = reviews.copy()
-        self.num_polls = num_polls if num_polls <= len(reviews)\
-            and num_polls > 0 else len(reviews)
-        self.num_questions = num_questions
+        self.star_rank = reviews[0].star_rank
+
+        self.poll_count = poll_count if poll_count <= len(reviews)\
+            and poll_count > 0 else len(reviews)
+        self.question_count = question_count
+        self.criterion = criterion
+        self.weighting = weighting
+        self.correlating = correlating
+
         self.seed_features = seed_features
-        self.__init_simulation_stats(criterion=criterion,
-                                     prior_count=prior_count,
-                                     prior_cost=prior_cost)
+        self.features = [Feature(i, feature_name)
+                         for i, feature_name in enumerate(self.seed_features)]
 
-    def __init_simulation_stats(self,
-                                criterion='weighted_sum_dirichlet_variances',
-                                prior_count=None,
-                                prior_cost=None):
+        # Keep track feature's uncertainty
+        self.uncertainty_book = UncertaintyBook(
+                self.star_rank,
+                len(self.features),
+                criterion=criterion,
+                weighting=weighting,
+                correlating=correlating,
+                dataset_profile=dataset_profile)
         self.step_to_cost = OrderedDict()
-        self.name_to_feature = {}    # feature_name -> feature (Feature)
-
-        # Initiate all features
-        for feature_name in self.seed_features:
-            stars = [0] * self.reviews[0].star_rank
-            self.name_to_feature[feature_name] = Feature(
-                    feature_name, stars, criterion=criterion,
-                    prior_count=prior_count, prior_cost=prior_cost)
-        self.step_to_cost[0] = Feature.product_cost(
-            self.name_to_feature.values())
+        self.uncertainty_book.refresh_uncertainty()
+        self.step_to_cost[0] = self.uncertainty_book.uncertainty_total()
 
     def simulate(self, pick_method, answer_method):
         """Simulate the asking-aswering process."""
-        for i in range(self.num_polls):
+        for i in range(self.poll_count):
+            self.uncertainty_book.refresh_uncertainty()
             # Keep track in case of answer_in_time_order, i.e. get all answers
             # from a single real review
-            self.num_waiting_answers = self.num_questions
-            for q in range(self.num_questions):
-                picked_feature = self.__getattribute__(pick_method)()
+            self.num_waiting_answers = self.question_count
+
+            already_picked_idx = []
+            rated_features = []
+            for q in range(self.question_count):
+                self.uncertainty_book.refresh_uncertainty()
+                picked_feature = self.__getattribute__(pick_method)(
+                        already_picked_idx)
                 answered_star = self.__getattribute__(answer_method)(
                         picked_feature)
 
                 # Update ratings, rating's uncertainty
+                already_picked_idx.append(picked_feature.idx)
                 if answered_star:
-                    picked_feature.increase_star(answered_star, count=1)
+                    self.uncertainty_book.rate_feature(picked_feature,
+                                                       answered_star)
+                    # Update co-rating of 2 features
+                    if rated_features:
+                        for pre_rated_feature, pre_star in rated_features:
+                            self.uncertainty_book.rate_2features(
+                                    pre_rated_feature, pre_star,
+                                    picked_feature, answered_star)
+                        rated_features.append((picked_feature, answered_star))
                 else:
                     picked_feature.no_answer_count += 1
-            self.step_to_cost[i + 1] = Feature.product_cost(
-                self.name_to_feature.values())
+            self.step_to_cost[i + 1] = \
+                self.uncertainty_book.uncertainty_total()
 
-        return SimulationStats(self.num_polls,
-                               self.num_questions,
-                               self.step_to_cost,
-                               list(self.name_to_feature.values()))
+        return SimulationStats(self.poll_count, self.question_count,
+                               self.step_to_cost, self.features,
+                               self.uncertainty_book)
 
     @abstractmethod
     def answer_by_gen(self, picked_feature):
@@ -111,50 +132,71 @@ class ReviewsSolicitation(ABC):
             answered_star: int
         """
 
-    def pick_highest_cost(self):
+    def pick_highest_cost(self, already_picked_idx):
         """Pick a feature with highest cost, break tie arbitrarily.
+        Args:
+            already_picked_idx: list
+                list of already picked feature indexes
         Returns:
             datamodel.Feature
         """
-        sorted_features = sorted(self.name_to_feature.values(), reverse=True)
-        highest_cost = sorted_features[0].criterion()
-        picked_features = [feature for feature in sorted_features
-                           if feature.criterion() == highest_cost]
-        return random.choice(picked_features)
+        if not already_picked_idx:
+            max_idx = np.argmax(self.uncertainty_book.uncertainties)
+            return self.features[max_idx]
+        else:
+            excluded_uncertainties = np.copy(
+                    self.uncertainty_book.uncertainties)
+            excluded_uncertainties[already_picked_idx] = np.NINF
+            max_idx = np.argmax(excluded_uncertainties)
+            return self.features[max_idx]
 
-    def pick_with_prob(self):
+    def pick_with_prob(self, already_picked_idx):
         """Ask features with probability proportional to its cost,
+        Args:
+            already_picked_idx: list
+                list of already picked feature indexes
         Returns:
             datamodel.Feature
         """
-        features = list(self.name_to_feature.values())
-        costs = np.array([feature.criterion() for feature in features])
-        weights = costs / np.sum(costs)
-        return np.random.choice(features, p=weights)
+        weights = self.uncertainty_book.uncertainties / \
+            self.uncertainty_book.uncertainty_total()
+        while True:
+            picked_feature = np.random.choice(self.features, p=weights)
+            if picked_feature.idx not in already_picked_idx:
+                return picked_feature
 
-    def pick_random(self):
+    def pick_random(self, already_picked_idx):
         """Pick a feature randomly
+        Args:
+            already_picked_idx: list
+                list of already picked feature indexes
         Returns:
             datamodel.Feature
         """
-        return random.choice(list(self.name_to_feature.values()))
+        while True:
+            picked_feature = np.random.choice(self.features)
+            if picked_feature.idx not in already_picked_idx:
+                return picked_feature
 
 
 class SimulationStats(object):
     """Resulting statistics of simulation
     Attributes:
-        num_polls (int): how many time can ask customers
-        num_questions (int): number of question per customer
+        poll_count (int): how many time can ask customers
+        question_count (int): number of question per customer
         step_to_cost (dict): step (int) -> cost
         final_features (list): list of data_model.Feature
+        uncertainty_book: uncertainty.UncertaintyBook
     """
-
-    def __init__(self, num_polls, num_questions, step_to_cost, final_features):
-        self.num_polls = num_polls
+    def __init__(self, poll_count, question_count,
+                 step_to_cost, final_features,
+                 uncertainty_book):
+        self.poll_count = poll_count
         self.step_to_cost = step_to_cost
-        self.final_features = list(final_features)
+        self.final_features = final_features
         self.no_answer_count = sum([feature.no_answer_count
                                     for feature in self.final_features])
+        self.uncertainty_book = uncertainty_book
 
     def stats_str(self, message='', detail=False):
         stat_str = message + '\n'
@@ -168,6 +210,9 @@ class SimulationStats(object):
             stat_str += 'Final cost after {} polls: {:.3f}\n'.format(
                 last_poll, self.step_to_cost[last_poll])
 
-        stat_str += 'final_features: {}'.format(self.final_features)
+        stat_str += 'final_features: '
+        for feature in self.final_features:
+            stat_str += '{}={}   '.format(
+                    feature.name, self.uncertainty_book.ratings[feature.idx])
         stat_str += '/no_answer_count={}'.format(self.no_answer_count)
         return stat_str
