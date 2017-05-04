@@ -1,11 +1,18 @@
 import unittest
+import itertools
+from collections import defaultdict
 
 import numpy as np
 import scipy.stats as stats
 
 
-# metrics = ['dirichlet_var_sum', 'expected_rating_var']
-metrics = ['expected_rating_var']
+metrics = ['dirichlet_var_sum',
+           'expected_rating_var',
+           'confidence_interval_len']
+#metrics = ['expected_rating_var']
+
+weightings = [True, False]
+correlatings = [True, False]
 
 
 class UncertaintyBook(object):
@@ -49,7 +56,6 @@ class UncertaintyBook(object):
         self.star_rank = star_rank
         self.feature_count = feature_count
         self.criterion = criterion
-        self.uncertainty_func = globals()[criterion]
         self.correlating = correlating
         self.weighting = weighting
         self.dataset_profile = dataset_profile
@@ -58,7 +64,7 @@ class UncertaintyBook(object):
             self.prior_rating_count = \
                 dataset_profile.feature_rating_count_average
             ratings_uncertainties = np.apply_along_axis(
-                self.uncertainty_func, 1,
+                globals()[criterion], 1,
                 np.array(dataset_profile.feature_ratings))
             self.prior_uncertainty = np.average(ratings_uncertainties)
             self.prior_uncertainty_total = self.prior_rating_count * \
@@ -76,33 +82,65 @@ class UncertaintyBook(object):
 
         Calculate based on self.criterion, self.weighting, self.correlating
         """
-        self.independent_uncertainties = np.apply_along_axis(
-            self.uncertainty_func, 1, self.ratings)
-        if self.weighting:
-            rating_counts = np.sum(self.ratings, axis=1)
-            self.independent_uncertainties = (
-                self.independent_uncertainties * rating_counts
-                + self.prior_uncertainty_total) / (
-                rating_counts + self.prior_rating_count)
+        self.independent_uncertainties, self.uncertainties = \
+            self.compute_uncertainty(self.criterion, self.weighting,
+                                     self.correlating)
 
-        if not self.correlating:
-            self.uncertainties = self.independent_uncertainties
+    def compute_uncertainty(self, uncertainty_func_name,
+                            weighting, correlating):
+        """Compute uncertainty using different metrics.
+
+        Args:
+            uncertainty_func_name: str
+            weighting: Boolean
+            correlating: Boolean
+        Returns:
+            (indept_uncertainties, cor_uncertainties)
+        """
+        indept_uncertainties = np.apply_along_axis(
+            globals()[uncertainty_func_name], 1, self.ratings)
+        if weighting:
+            rating_counts = np.sum(self.ratings, axis=1)
+            indept_uncertainties = (indept_uncertainties * rating_counts
+                                    + self.prior_uncertainty_total) / (
+                                    rating_counts + self.prior_rating_count)
+
+        if not correlating:
+            cor_uncertainties = np.copy(indept_uncertainties)
         else:
-            self.correlations = np.apply_along_axis(
+            correlations = np.apply_along_axis(
                 pearson_cor_on_flatten, 2,
                 self.co_ratings.reshape(self.feature_count, self.feature_count,
                                         self.star_rank * self.star_rank))
-            np.fill_diagonal(self.correlations, 1)
-            self.correlated_var = self.independent_uncertainties.reshape(
-                self.feature_count, 1) / np.abs(self.correlations)
-            self.uncertainties = np.min(self.correlated_var, axis=1)
+            np.fill_diagonal(correlations, 1)
+            correlated_var = indept_uncertainties.reshape(
+                self.feature_count, 1) / np.abs(correlations)
+            cor_uncertainties = np.min(correlated_var, axis=1)
+        return (indept_uncertainties, cor_uncertainties)
 
-    def uncertainty_total(self):
-        """Total uncertainties of all features
+    def report_uncertainty(self):
+        report = UncertaintyReport()
+        for metric, weighting, correlating in itertools.product(
+                metrics, weightings, correlatings):
+            report.add_uncertainty(metric, weighting, correlating,
+                                   self.uncertainty_total(metric, weighting,
+                                                          correlating))
 
-        Calculate based on self.criterion, self.weighting, self.correlating
+        return report
+
+    def uncertainty_total(self, uncertainty_func_name, weighting, correlating):
+        """Total uncertainties of all features.
+
+        Args:
+            uncertainty_func_name: str
+            weighting: Boolean
+            correlating: Boolean
+        Returns:
+            sum of all features' uncertainties, float
         """
-        return self.uncertainties.sum()
+        _, cor_uncertainties = self.compute_uncertainty(uncertainty_func_name,
+                                                        weighting, correlating)
+        return cor_uncertainties.sum()
 
     def rate_feature(self, feature, star, count=1):
         """ Rate a single feature."""
@@ -119,6 +157,22 @@ class UncertaintyBook(object):
                 self.star_rank))
         self.co_ratings[feature1.idx, feature2.idx, star1 - 1, star2 - 1] += 1
         self.co_ratings[feature2.idx, feature1.idx, star2 - 1, star1 - 1] += 1
+
+
+class UncertaintyReport(object):
+
+    def __init__(self, **kargs):
+        self.uncertainty_totals = defaultdict(float)
+
+    def add_uncertainty(self, metric, weighting, correlating,
+                        uncertainty_total):
+        self.uncertainty_totals[(metric, weighting, correlating)] = \
+            uncertainty_total
+
+    def __str__(self):
+        strs = ['{:50s}: {:.3f}'.format(str(key), value)
+                for key, value in self.uncertainty_totals.items()]
+        return '\n'.join(strs)
 
 
 def weighted_uncertainty(uncertainty, rating_count,
@@ -199,17 +253,22 @@ def pearson_cor(count_table):
     return cov / np.sqrt(rvar * cvar)
 
 
-def confidence_interval_len(ratings, confidence_level=0.95):
+def confidence_interval_len(rating_counts, confidence_level=0.95):
     """Confidence interval length using Student distribution
     Args:
-        ratings: list, numpy array of star
+        rating_counts: numpy array of star count
         confidence_level: float, default=0.95
     """
-    n, _, mean, variance, _, _ = stats.describe(ratings)
-    sd = np.sqrt(variance)
+    n = np.sum(rating_counts + 1)
+
+    stars = np.arange(1, rating_counts.shape[0] + 1)
+    mean = rating_counts.dot(stars) / n
+    spread = stars - mean
+    sd = np.sqrt(rating_counts.dot(spread * spread) / n)
+    if sd == 0:
+        return 0
     lower, upper = stats.t.interval(confidence_level, n - 1,
                                     loc=mean, scale=sd / np.sqrt(n))
-    print(lower, upper)
     return upper - lower
 
 

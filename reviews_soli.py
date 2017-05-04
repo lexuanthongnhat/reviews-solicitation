@@ -24,7 +24,7 @@ class ReviewsSolicitation(ABC):
             consider a feature's uncertainty using correlated features
         dataset_profile: SimulationStats object, default=None
             dataset's profile
-        step_to_cost: dict
+        poll_to_cost: dict
             cost change over each time of asking questions
     """
     # pick_methods = ['pick_highest_cost',
@@ -72,9 +72,8 @@ class ReviewsSolicitation(ABC):
                 correlating=correlating,
                 dataset_profile=dataset_profile,
                 confidence_level=kargs['confidence_level'])
-        self.step_to_cost = OrderedDict()
-        self.uncertainty_book.refresh_uncertainty()
-        self.step_to_cost[0] = self.uncertainty_book.uncertainty_total()
+        self.poll_to_cost = OrderedDict()
+        self.poll_to_cost[0] = self.uncertainty_book.report_uncertainty()
 
     def simulate(self, pick_method, answer_method):
         """Simulate the asking-aswering process."""
@@ -107,11 +106,11 @@ class ReviewsSolicitation(ABC):
                         rated_features.append((picked_feature, answered_star))
                 else:
                     picked_feature.no_answer_count += 1
-            self.step_to_cost[i + 1] = \
-                self.uncertainty_book.uncertainty_total()
+            self.poll_to_cost[i + 1] = \
+                self.uncertainty_book.report_uncertainty()
 
         return SimulationStats(self.poll_count, self.question_count,
-                               self.step_to_cost, self.features,
+                               self.poll_to_cost, self.features,
                                self.uncertainty_book)
 
     @abstractmethod
@@ -185,15 +184,15 @@ class SimulationStats(object):
     Attributes:
         poll_count (int): how many time can ask customers
         question_count (int): number of question per customer
-        step_to_cost (dict): step (int) -> cost
+        poll_to_cost (dict): poll (int) -> cost
         final_features (list): list of data_model.Feature
         uncertainty_book: uncertainty.UncertaintyBook
     """
     def __init__(self, poll_count, question_count,
-                 step_to_cost, final_features,
+                 poll_to_cost, final_features,
                  uncertainty_book):
         self.poll_count = poll_count
-        self.step_to_cost = step_to_cost
+        self.poll_to_cost = poll_to_cost
         self.final_features = final_features
         self.no_answer_count = sum([feature.no_answer_count
                                     for feature in self.final_features])
@@ -203,13 +202,13 @@ class SimulationStats(object):
         stat_str = message + '\n'
 
         if detail:
-            costs = ['{}: {:.3f}'.format(step, cost)
-                     for step, cost in self.step_to_cost.items()]
+            costs = ['{}: {:.3f}'.format(poll, cost)
+                     for poll, cost in self.poll_to_cost.items()]
             stat_str += ', '.join(costs) + '\n'
         else:
-            last_poll = len(self.step_to_cost) - 1
-            stat_str += 'Final cost after {} polls: {:.3f}\n'.format(
-                last_poll, self.step_to_cost[last_poll])
+            last_poll = len(self.poll_to_cost) - 1
+            stat_str += 'Final cost after {} polls:\n{}\n'.format(
+                last_poll, self.poll_to_cost[last_poll])
 
         stat_str += 'final_features: '
         for feature in self.final_features:
