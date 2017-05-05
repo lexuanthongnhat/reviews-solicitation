@@ -50,6 +50,8 @@ class EdmundsReview(Review):
     }
     main_features = features_dict.keys()
     seed_features = main_features
+    non_rare_features = ['performanceRating', 'comfortRating',
+                         'interiorRating', 'reliabilityRating', 'valueRating']
     minor_features = [fture for ftures in features_dict.values()
                       for fture in ftures]
     overall_rating = 'userRating'
@@ -67,7 +69,7 @@ class EdmundsReview(Review):
             csv_reader = csv.DictReader(csvfile)
             for row in csv_reader:
                 # Filter out rows with erroneous rating
-                stars = [int(row[feature]) for feature in cls.main_features
+                stars = [int(row[feature]) for feature in cls.non_rare_features
                          if row[feature]]
                 is_erroneous = any([star for star in stars
                                     if star > star_rank or star <= 0])
@@ -83,7 +85,7 @@ class EdmundsReview(Review):
 
             for row in time_sorted_rows:
                 feature_to_star = {feature: int(row[feature])
-                                   for feature in cls.main_features
+                                   for feature in cls.non_rare_features
                                    if row[feature]}
                 car = Car(row["make"], row["model"],
                           row["year"], row["styleId"])

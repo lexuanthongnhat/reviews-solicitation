@@ -27,14 +27,14 @@ class ReviewsSolicitation(ABC):
         poll_to_cost: dict
             cost change over each time of asking questions
     """
-    # pick_methods = ['pick_highest_cost',
-                    # 'pick_with_prob',
-                    # 'pick_random']
+    pick_methods = ['pick_highest_cost',
+                    'pick_with_prob',
+                    'pick_random']
 
     answer_methods = ['answer_by_gen',
                       'answer_in_time_order']
 
-    pick_methods = ['pick_highest_cost']
+    # pick_methods = ['pick_highest_cost']
     # answer_methods = ['answer_by_gen']
 
     def __init__(self, reviews,
@@ -146,8 +146,13 @@ class ReviewsSolicitation(ABC):
         else:
             excluded_uncertainties = np.copy(
                     self.uncertainty_book.uncertainties)
-            excluded_uncertainties[already_picked_idx] = np.NINF
+            excluded_uncertainties[already_picked_idx] = -float('inf')
             max_idx = np.argmax(excluded_uncertainties)
+            if max_idx < 0 or max_idx > len(self.features):
+                raise ValueError('Something wrong with selecting max_idx, '
+                        'already_picked_idx={}, excluded_uncertainties={} '
+                        'max_idx={}'.format(already_picked_idx,
+                            excluded_uncertainties, max_idx))
             return self.features[max_idx]
 
     def pick_with_prob(self, already_picked_idx):
@@ -159,7 +164,7 @@ class ReviewsSolicitation(ABC):
             datamodel.Feature
         """
         weights = self.uncertainty_book.uncertainties / \
-            self.uncertainty_book.uncertainty_total()
+            np.sum(self.uncertainty_book.uncertainties)
         while True:
             picked_feature = np.random.choice(self.features, p=weights)
             if picked_feature.idx not in already_picked_idx:
@@ -184,7 +189,9 @@ class SimulationStats(object):
     Attributes:
         poll_count (int): how many time can ask customers
         question_count (int): number of question per customer
-        poll_to_cost (dict): poll (int) -> cost
+        poll_to_cost (dict): poll (int) -> UncertaintyReport
+        polls: list of polls
+        uncertainty_reports: list of uncertainty.UncertaintyReport
         final_features (list): list of data_model.Feature
         uncertainty_book: uncertainty.UncertaintyBook
     """
@@ -193,6 +200,8 @@ class SimulationStats(object):
                  uncertainty_book):
         self.poll_count = poll_count
         self.poll_to_cost = poll_to_cost
+        self.polls = list(self.poll_to_cost.keys())
+        self.uncertainty_reports = list(self.poll_to_cost.values())
         self.final_features = final_features
         self.no_answer_count = sum([feature.no_answer_count
                                     for feature in self.final_features])

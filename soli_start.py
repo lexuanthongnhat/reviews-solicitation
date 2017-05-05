@@ -114,10 +114,11 @@ def simulate_reviews_soli_per_product(
         dataset_profile: SimulationStats object, default=None
             dataset's profile
     Returns:
-        sim_stats: list of SimulationStats, corresponding to
-                   ReviewsSolicitation.pick_methods/answer_methods
+        pick_answer_to_sim_stats: dict,
+            tuple (pick_method, answer_method) -> SimulationStats
+            from ReviewsSolicitation.pick_methods/answer_methods
     """
-    sim_stats = []
+    pick_answer_to_sim_stats = {}
     for pick_method, answer_method in itertools.product(
             ReviewsSolicitation.pick_methods,
             ReviewsSolicitation.answer_methods):
@@ -131,10 +132,10 @@ def simulate_reviews_soli_per_product(
                                                dataset_profile=dataset_profile,
                                                **kargs)
         sim_stat = reviews_soli_sim.simulate(pick_method, answer_method)
-        sim_stats.append(sim_stat)
+        pick_answer_to_sim_stats[(pick_method, answer_method)] = sim_stat
         logger.debug(sim_stat.stats_str(pick_method + ' - ' + answer_method))
 
-    return sim_stats
+    return pick_answer_to_sim_stats
 
 
 def probe_dataset(file_path, star_rank=5, dataset='edmunds'):
@@ -187,19 +188,17 @@ if __name__ == '__main__':
     dataset_profile = probe_dataset(args.input)
     logger.info('Number of products: {}'.format(dataset_profile.product_count))
 
-    correlatings = [True]
-    weightings = [True]
-    for metric, weighting, correlating in itertools.product(
-            uncertainty.metrics, weightings, correlatings):
+    for criterion, weighting, correlating in uncertainty.uncertainty_metrics:
         logger.debug('Experiment with criterion "{}", weighting={}, '
-                     'correlating={}'.format(metric, weighting, correlating))
+                     'correlating={}'.format(criterion, weighting,
+                                             correlating))
         simulate_reviews_soli(args.input,
                               star_rank=args.star_rank,
                               dataset=args.dataset,
                               poll_count=args.poll_count,
                               question_count=args.question_count,
                               review_count_lowbound=args.review_count_lowbound,
-                              criterion=metric,
+                              criterion=criterion,
                               weighting=weighting,
                               correlating=correlating,
                               dataset_profile=dataset_profile,

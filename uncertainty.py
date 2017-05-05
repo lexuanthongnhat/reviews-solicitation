@@ -13,7 +13,13 @@ metrics = ['dirichlet_var_sum',
 
 weightings = [True, False]
 correlatings = [True, False]
-
+uncertainty_metrics = [('dirichlet_var_sum', False, False),
+                       ('dirichlet_var_sum', True, False),
+                       ('expected_rating_var', False, False),
+                       ('expected_rating_var', True, False),
+                       ('expected_rating_var', False, True),
+                       ('expected_rating_var', True, True),
+                       ('confidence_interval_len', False, False)]
 
 class UncertaintyBook(object):
     """Keep track feature's uncertainty.
@@ -60,7 +66,7 @@ class UncertaintyBook(object):
         self.weighting = weighting
         self.dataset_profile = dataset_profile
         self.confidence_level = confidence_level
-        if weighting and dataset_profile:
+        if dataset_profile:
             self.prior_rating_count = \
                 dataset_profile.feature_rating_count_average
             ratings_uncertainties = np.apply_along_axis(
@@ -88,7 +94,7 @@ class UncertaintyBook(object):
 
     def compute_uncertainty(self, uncertainty_func_name,
                             weighting, correlating):
-        """Compute uncertainty using different metrics.
+        """Compute uncertainty using different criteria.
 
         Args:
             uncertainty_func_name: str
@@ -120,8 +126,7 @@ class UncertaintyBook(object):
 
     def report_uncertainty(self):
         report = UncertaintyReport()
-        for metric, weighting, correlating in itertools.product(
-                metrics, weightings, correlatings):
+        for metric, weighting, correlating in uncertainty_metrics:
             report.add_uncertainty(metric, weighting, correlating,
                                    self.uncertainty_total(metric, weighting,
                                                           correlating))
@@ -173,6 +178,12 @@ class UncertaintyReport(object):
         strs = ['{:50s}: {:.3f}'.format(str(key), value)
                 for key, value in self.uncertainty_totals.items()]
         return '\n'.join(strs)
+
+    def metrics(self):
+        return list(self.uncertainty_totals.keys())
+
+    def get_metric(self, metric):
+        return self.uncertainty_totals[metric]
 
 
 def weighted_uncertainty(uncertainty, rating_count,
