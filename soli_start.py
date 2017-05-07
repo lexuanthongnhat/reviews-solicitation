@@ -1,12 +1,15 @@
 import logging
 import argparse
 import itertools
+import pickle
+import os
+from collections import OrderedDict
 
 import data_model
 from reviews_soli import ReviewsSolicitation
 from edmunds import EdmundsReview
 from edmunds_soli import EdmundsReviewSolicitation
-import uncertainty
+from uncertainty import UncertaintyBook
 
 
 logger = logging.getLogger(__name__)
@@ -29,8 +32,8 @@ def simulate_reviews_soli(file_path,
                           question_count=1,
                           review_count_lowbound=200,
                           criterion='expected_rating_var',
-                          weighting=False,
-                          correlating=False,
+                          weighted=False,
+                          correlated=False,
                           dataset_profile=None,
                           **kargs):
     """Simulate the asking process
@@ -47,9 +50,9 @@ def simulate_reviews_soli(file_path,
             Only consider products with more than this lower bound into
         criterion: string, default='expected_rating_var'
             uncertainty metric
-        weighting: Boolean, default=False
-            weighting uncertainty metric using prior/global ratings
-        correlating: Boolean, default=False
+        weighted: Boolean, default=False
+            weighted uncertainty metric using prior/global ratings
+        correlated: Boolean, default=False
             consider a feature's uncertainty using correlated features
         dataset_profile: SimulationStats object, default=None
             dataset's profile
@@ -75,9 +78,9 @@ def simulate_reviews_soli(file_path,
             poll_count=poll_count,
             question_count=question_count,
             seed_features=review_cls.seed_features,
-            weighting=weighting,
+            weighted=weighted,
             criterion=criterion,
-            correlating=correlating,
+            correlated=correlated,
             dataset_profile=dataset_profile,
             **kargs)
 
@@ -90,8 +93,8 @@ def simulate_reviews_soli_per_product(
         question_count=1,
         seed_features=[],
         criterion='weighted_sum_dirichlet_variances',
-        weighting=False,
-        correlating=False,
+        weighted=False,
+        correlated=False,
         dataset_profile=None,
         **kargs):
     """
@@ -107,9 +110,9 @@ def simulate_reviews_soli_per_product(
             Only consider products with more than this lower bound into
         criterion: string, default='expected_rating_var'
             uncertainty metric
-        weighting: Boolean, default=False
-            weighting uncertainty metric using prior/global ratings
-        correlating: Boolean, default=False
+        weighted: Boolean, default=False
+            weighted uncertainty metric using prior/global ratings
+        correlated: Boolean, default=False
             consider a feature's uncertainty using correlated features
         dataset_profile: SimulationStats object, default=None
             dataset's profile
@@ -118,17 +121,17 @@ def simulate_reviews_soli_per_product(
             tuple (pick_method, answer_method) -> SimulationStats
             from ReviewsSolicitation.pick_methods/answer_methods
     """
-    pick_answer_to_sim_stats = {}
-    for pick_method, answer_method in itertools.product(
-            ReviewsSolicitation.pick_methods,
-            ReviewsSolicitation.answer_methods):
+    pick_answer_to_sim_stats = OrderedDict()
+    for answer_method, pick_method in itertools.product(
+            ReviewsSolicitation.answer_methods,
+            ReviewsSolicitation.pick_methods):
         reviews_soli_sim = review_soli_sim_cls(reviews,
                                                poll_count=poll_count,
                                                question_count=question_count,
                                                seed_features=seed_features,
                                                criterion=criterion,
-                                               weighting=weighting,
-                                               correlating=correlating,
+                                               weighted=weighted,
+                                               correlated=correlated,
                                                dataset_profile=dataset_profile,
                                                **kargs)
         sim_stat = reviews_soli_sim.simulate(pick_method, answer_method)
@@ -178,6 +181,9 @@ if __name__ == '__main__':
             help="Only consider products with more than this lower bound into "
             " experiment (default=200)")
     parser.add_argument(
+            "--output", default="output",
+            help="output directory (default='output')")
+    parser.add_argument(
             "--loglevel", default='WARN',
             help="log level (default='WARN')")
     args = parser.parse_args()
@@ -188,18 +194,23 @@ if __name__ == '__main__':
     dataset_profile = probe_dataset(args.input)
     logger.info('Number of products: {}'.format(dataset_profile.product_count))
 
-    for criterion, weighting, correlating in uncertainty.uncertainty_metrics:
-        logger.debug('Experiment with criterion "{}", weighting={}, '
-                     'correlating={}'.format(criterion, weighting,
-                                             correlating))
-        simulate_reviews_soli(args.input,
-                              star_rank=args.star_rank,
-                              dataset=args.dataset,
-                              poll_count=args.poll_count,
-                              question_count=args.question_count,
-                              review_count_lowbound=args.review_count_lowbound,
-                              criterion=criterion,
-                              weighting=weighting,
-                              correlating=correlating,
-                              dataset_profile=dataset_profile,
-                              confidence_level=args.confidence_level)
+    optim_goal_to_product_result_stats = OrderedDict()
+    for optim_goal in UncertaintyBook.optimization_goals:
+        logger.debug('Optimization goal: "{}"'.format(optim_goal))
+        product_to_result_stats = simulate_reviews_soli(
+                args.input,
+                star_rank=args.star_rank,
+                dataset=args.dataset,
+                poll_count=args.poll_count,
+                question_count=args.question_count,
+                review_count_lowbound=args.review_count_lowbound,
+                criterion=optim_goal.criterion,
+                weighted=optim_goal.weighted,
+                correlated=optim_goal.correlated,
+                dataset_profile=dataset_profile,
+                confidence_level=args.confidence_level)
+        optim_goal_to_product_result_stats[optim_goal] = \
+            product_to_result_stats
+
+    with open(os.path.join(args.output, 'result.pickle'), 'wb') as result_file:
+        pickle.dump(optim_goal_to_product_result_stats, result_file)

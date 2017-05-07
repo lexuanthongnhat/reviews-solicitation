@@ -18,9 +18,9 @@ class ReviewsSolicitation(ABC):
         seed_features: list of features name (string), if any (default: [])
         criterion: string, default='expected_rating_var'
             uncertainty metric
-        weighting: Boolean, default=False
-            weighting uncertainty metric using prior/global ratings
-        correlating: Boolean, default=False
+        weighted: Boolean, default=False
+            weighted uncertainty metric using prior/global ratings
+        correlated: Boolean, default=False
             consider a feature's uncertainty using correlated features
         dataset_profile: SimulationStats object, default=None
             dataset's profile
@@ -42,8 +42,8 @@ class ReviewsSolicitation(ABC):
                  question_count=1,
                  seed_features=[],
                  criterion='expected_rating_var',
-                 weighting=False,
-                 correlating=False,
+                 weighted=False,
+                 correlated=False,
                  dataset_profile=None,
                  **kargs):
         if len(reviews) < 1:
@@ -56,8 +56,8 @@ class ReviewsSolicitation(ABC):
             and poll_count > 0 else len(reviews)
         self.question_count = question_count
         self.criterion = criterion
-        self.weighting = weighting
-        self.correlating = correlating
+        self.weighted = weighted
+        self.correlated = correlated
 
         self.seed_features = seed_features
         self.features = [Feature(i, feature_name)
@@ -68,8 +68,8 @@ class ReviewsSolicitation(ABC):
                 self.star_rank,
                 len(self.features),
                 criterion=criterion,
-                weighting=weighting,
-                correlating=correlating,
+                weighted=weighted,
+                correlated=correlated,
                 dataset_profile=dataset_profile,
                 confidence_level=kargs['confidence_level'])
         self.poll_to_cost = OrderedDict()
@@ -111,7 +111,7 @@ class ReviewsSolicitation(ABC):
 
         return SimulationStats(self.poll_count, self.question_count,
                                self.poll_to_cost, self.features,
-                               self.uncertainty_book)
+                               self.uncertainty_book.ratings)
 
     @abstractmethod
     def answer_by_gen(self, picked_feature):
@@ -148,11 +148,6 @@ class ReviewsSolicitation(ABC):
                     self.uncertainty_book.uncertainties)
             excluded_uncertainties[already_picked_idx] = -float('inf')
             max_idx = np.argmax(excluded_uncertainties)
-            if max_idx < 0 or max_idx > len(self.features):
-                raise ValueError('Something wrong with selecting max_idx, '
-                        'already_picked_idx={}, excluded_uncertainties={} '
-                        'max_idx={}'.format(already_picked_idx,
-                            excluded_uncertainties, max_idx))
             return self.features[max_idx]
 
     def pick_with_prob(self, already_picked_idx):
@@ -193,11 +188,10 @@ class SimulationStats(object):
         polls: list of polls
         uncertainty_reports: list of uncertainty.UncertaintyReport
         final_features (list): list of data_model.Feature
-        uncertainty_book: uncertainty.UncertaintyBook
+        final_ratings: 2d np array, from UncertaintyBook.ratings
     """
     def __init__(self, poll_count, question_count,
-                 poll_to_cost, final_features,
-                 uncertainty_book):
+                 poll_to_cost, final_features, final_ratings):
         self.poll_count = poll_count
         self.poll_to_cost = poll_to_cost
         self.polls = list(self.poll_to_cost.keys())
@@ -205,7 +199,7 @@ class SimulationStats(object):
         self.final_features = final_features
         self.no_answer_count = sum([feature.no_answer_count
                                     for feature in self.final_features])
-        self.uncertainty_book = uncertainty_book
+        self.final_ratings = final_ratings
 
     def stats_str(self, message='', detail=False):
         stat_str = message + '\n'
@@ -221,7 +215,7 @@ class SimulationStats(object):
 
         stat_str += 'final_features: '
         for feature in self.final_features:
-            stat_str += '{}={}   '.format(
-                    feature.name, self.uncertainty_book.ratings[feature.idx])
+            stat_str += '{}={}   '.format(feature.name,
+                                          self.final_ratings[feature.idx])
         stat_str += '/no_answer_count={}'.format(self.no_answer_count)
         return stat_str

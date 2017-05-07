@@ -1,25 +1,44 @@
 import unittest
-import itertools
 from collections import defaultdict
 
 import numpy as np
 import scipy.stats as stats
 
 
-metrics = ['dirichlet_var_sum',
-           'expected_rating_var',
-           'confidence_interval_len']
-#metrics = ['expected_rating_var']
+class UncertaintyMetric(object):
+    """Modeling different uncertainty metrics.
 
-weightings = [True, False]
-correlatings = [True, False]
-uncertainty_metrics = [('dirichlet_var_sum', False, False),
-                       ('dirichlet_var_sum', True, False),
-                       ('expected_rating_var', False, False),
-                       ('expected_rating_var', True, False),
-                       ('expected_rating_var', False, True),
-                       ('expected_rating_var', True, True),
-                       ('confidence_interval_len', False, False)]
+    Attributes:
+        criterion: str,
+            individual/independent uncertainty of a single feature
+        weighted: Boolean, default=False,
+            weighted by global/prior uncertainty information
+        correlated: Boolean, default=False,
+            infer a feature's uncertainty by other highly correlated features
+    """
+    def __init__(self, criterion, weighted=False, correlated=False):
+        self.criterion = criterion
+        self.weighted = weighted
+        self.correlated = correlated
+
+    def __repr__(self):
+        metric_str = self.criterion
+        metric_str += '_weighted' if self.weighted else ''
+        metric_str += '_correlated' if self.weighted else ''
+        return metric_str
+
+    def __eq__(self, other):
+        return isinstance(other, self.__class__) \
+                and self.criterion == other.criterion \
+                and self.weighted == other.weighted \
+                and self.correlated == other.correlated
+
+    def __neq__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return hash((self.criterion, self.weighted, self.correlated))
+
 
 class UncertaintyBook(object):
     """Keep track feature's uncertainty.
@@ -32,9 +51,9 @@ class UncertaintyBook(object):
             number of features
         criterion: string, default='expected_rating_var'
             uncertainty metric
-        weighting: Boolean, default=False
-            weighting uncertainty metric using prior/global ratings
-        correlating: Boolean, default=False
+        weighted: Boolean, default=False
+            weighted uncertainty metric using prior/global ratings
+        correlated: Boolean, default=False
             consider a feature's uncertainty using correlated features
         dataset_profile: SimulationStats object, default=None
             dataset's profile
@@ -46,13 +65,31 @@ class UncertaintyBook(object):
         independent_uncertainties: 1d np array, shape: (feature_count, )
             individual feature's uncertainty values
         uncertainties: 1d np array, shape: (feature_count, )
-            feature's uncertainties after weighting, correlating
+            feature's uncertainties after weighted, correlated
     """
+    uncertainty_metrics = [
+            UncertaintyMetric('dirichlet_var_sum', weighted=False,
+                              correlated=False),
+            UncertaintyMetric('dirichlet_var_sum', weighted=True,
+                              correlated=False),
+            UncertaintyMetric('expected_rating_var', weighted=False,
+                              correlated=True),
+            UncertaintyMetric('expected_rating_var', weighted=False,
+                              correlated=False),
+            UncertaintyMetric('expected_rating_var', weighted=True,
+                              correlated=False),
+            UncertaintyMetric('expected_rating_var', weighted=True,
+                              correlated=True),
+            UncertaintyMetric('confidence_interval_len', weighted=False,
+                              correlated=False)
+            ]
+
+    optimization_goals = uncertainty_metrics[:2]
 
     def __init__(self, star_rank, feature_count,
                  criterion='expected_rating_var',
-                 weighting=False,
-                 correlating=False,
+                 weighted=False,
+                 correlated=False,
                  dataset_profile=None,
                  confidence_level=0.95):
         if star_rank < 2 or feature_count < 1:
@@ -62,8 +99,8 @@ class UncertaintyBook(object):
         self.star_rank = star_rank
         self.feature_count = feature_count
         self.criterion = criterion
-        self.correlating = correlating
-        self.weighting = weighting
+        self.correlated = correlated
+        self.weighted = weighted
         self.dataset_profile = dataset_profile
         self.confidence_level = confidence_level
         if dataset_profile:
@@ -86,32 +123,34 @@ class UncertaintyBook(object):
     def refresh_uncertainty(self):
         """Refresh (independent) uncertainties to reflect latest ratings.
 
-        Calculate based on self.criterion, self.weighting, self.correlating
+        Calculate based on self.criterion, self.weighted, self.correlated
         """
         self.independent_uncertainties, self.uncertainties = \
-            self.compute_uncertainty(self.criterion, self.weighting,
-                                     self.correlating)
+            self.compute_uncertainty(self.criterion, self.weighted,
+                                     self.correlated)
 
     def compute_uncertainty(self, uncertainty_func_name,
-                            weighting, correlating):
+                            weighted, correlated):
         """Compute uncertainty using different criteria.
 
         Args:
             uncertainty_func_name: str
-            weighting: Boolean
-            correlating: Boolean
+                function name of this module, e.g. 'dirichlet_var_sum',
+                'expected_rating_var', 'pearson_cor', 'confidence_interval_len'
+            weighted: Boolean
+            correlated: Boolean
         Returns:
             (indept_uncertainties, cor_uncertainties)
         """
         indept_uncertainties = np.apply_along_axis(
             globals()[uncertainty_func_name], 1, self.ratings)
-        if weighting:
+        if weighted:
             rating_counts = np.sum(self.ratings, axis=1)
             indept_uncertainties = (indept_uncertainties * rating_counts
                                     + self.prior_uncertainty_total) / (
                                     rating_counts + self.prior_rating_count)
 
-        if not correlating:
+        if not correlated:
             cor_uncertainties = np.copy(indept_uncertainties)
         else:
             correlations = np.apply_along_axis(
@@ -126,25 +165,22 @@ class UncertaintyBook(object):
 
     def report_uncertainty(self):
         report = UncertaintyReport()
-        for metric, weighting, correlating in uncertainty_metrics:
-            report.add_uncertainty(metric, weighting, correlating,
-                                   self.uncertainty_total(metric, weighting,
-                                                          correlating))
+        for metric in self.uncertainty_metrics:
+            report.add_uncertainty(metric, self.uncertainty_total(metric))
 
         return report
 
-    def uncertainty_total(self, uncertainty_func_name, weighting, correlating):
+    def uncertainty_total(self, metric):
         """Total uncertainties of all features.
 
         Args:
-            uncertainty_func_name: str
-            weighting: Boolean
-            correlating: Boolean
+            metric: UncertaintyMetric
         Returns:
             sum of all features' uncertainties, float
         """
-        _, cor_uncertainties = self.compute_uncertainty(uncertainty_func_name,
-                                                        weighting, correlating)
+        _, cor_uncertainties = self.compute_uncertainty(metric.criterion,
+                                                        metric.weighted,
+                                                        metric.correlated)
         return cor_uncertainties.sum()
 
     def rate_feature(self, feature, star, count=1):
@@ -169,10 +205,8 @@ class UncertaintyReport(object):
     def __init__(self, **kargs):
         self.uncertainty_totals = defaultdict(float)
 
-    def add_uncertainty(self, metric, weighting, correlating,
-                        uncertainty_total):
-        self.uncertainty_totals[(metric, weighting, correlating)] = \
-            uncertainty_total
+    def add_uncertainty(self, metric, uncertainty_total):
+        self.uncertainty_totals[metric] = uncertainty_total
 
     def __str__(self):
         strs = ['{:50s}: {:.3f}'.format(str(key), value)

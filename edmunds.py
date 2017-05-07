@@ -69,7 +69,7 @@ class EdmundsReview(Review):
             csv_reader = csv.DictReader(csvfile)
             for row in csv_reader:
                 # Filter out rows with erroneous rating
-                stars = [int(row[feature]) for feature in cls.non_rare_features
+                stars = [int(row[feature]) for feature in cls.seed_features
                          if row[feature]]
                 is_erroneous = any([star for star in stars
                                     if star > star_rank or star <= 0])
@@ -85,7 +85,7 @@ class EdmundsReview(Review):
 
             for row in time_sorted_rows:
                 feature_to_star = {feature: int(row[feature])
-                                   for feature in cls.non_rare_features
+                                   for feature in cls.seed_features
                                    if row[feature]}
                 car = Car(row["make"], row["model"],
                           row["year"], row["styleId"])
