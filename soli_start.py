@@ -2,8 +2,10 @@ import logging
 import argparse
 import itertools
 import pickle
-import os
 from collections import OrderedDict
+import cProfile
+import pstats
+from timeit import default_timer
 
 import data_model
 from reviews_soli import ReviewsSolicitation
@@ -23,6 +25,36 @@ logger.addHandler(ch)
 dataset_to_review_and_sim_cls = {
     'edmunds': (EdmundsReview, EdmundsReviewSolicitation)
 }
+
+
+def main(args):
+    """
+    Attributes:
+        args: Namespace object, return by ArgumentParser.parse_args()
+    """
+    dataset_profile = probe_dataset(args.input)
+    logger.info('Number of products: {}'.format(dataset_profile.product_count))
+
+    optim_goal_to_product_result_stats = OrderedDict()
+    for optim_goal in UncertaintyBook.optimization_goals:
+        logger.debug('Optimization goal: "{}"'.format(optim_goal))
+        product_to_result_stats = simulate_reviews_soli(
+                args.input,
+                star_rank=args.star_rank,
+                dataset=args.dataset,
+                poll_count=args.poll_count,
+                question_count=args.question_count,
+                review_count_lowbound=args.review_count_lowbound,
+                criterion=optim_goal.criterion,
+                weighted=optim_goal.weighted,
+                correlated=optim_goal.correlated,
+                dataset_profile=dataset_profile,
+                confidence_level=args.confidence_level)
+        optim_goal_to_product_result_stats[optim_goal] = \
+            product_to_result_stats
+
+    with open(args.output, 'wb') as result_file:
+        pickle.dump(optim_goal_to_product_result_stats, result_file)
 
 
 def simulate_reviews_soli(file_path,
@@ -182,35 +214,26 @@ if __name__ == '__main__':
             " experiment (default=200)")
     parser.add_argument(
             "--output", default="output",
-            help="output directory (default='output')")
+            help="output directory (default='output/result.pickle')")
     parser.add_argument(
             "--loglevel", default='WARN',
             help="log level (default='WARN')")
+    parser.add_argument(
+            "--profile", action="store_true",
+            help="Profile the program")
     args = parser.parse_args()
 
     logger.setLevel(getattr(logging, args.loglevel.upper()))
     logger.debug("args: {}".format(args))
 
-    dataset_profile = probe_dataset(args.input)
-    logger.info('Number of products: {}'.format(dataset_profile.product_count))
-
-    optim_goal_to_product_result_stats = OrderedDict()
-    for optim_goal in UncertaintyBook.optimization_goals:
-        logger.debug('Optimization goal: "{}"'.format(optim_goal))
-        product_to_result_stats = simulate_reviews_soli(
-                args.input,
-                star_rank=args.star_rank,
-                dataset=args.dataset,
-                poll_count=args.poll_count,
-                question_count=args.question_count,
-                review_count_lowbound=args.review_count_lowbound,
-                criterion=optim_goal.criterion,
-                weighted=optim_goal.weighted,
-                correlated=optim_goal.correlated,
-                dataset_profile=dataset_profile,
-                confidence_level=args.confidence_level)
-        optim_goal_to_product_result_stats[optim_goal] = \
-            product_to_result_stats
-
-    with open(os.path.join(args.output, 'result.pickle'), 'wb') as result_file:
-        pickle.dump(optim_goal_to_product_result_stats, result_file)
+    if args.profile:
+        profile = cProfile.Profile()
+        profile.runcall(main, args)
+        stats = pstats.Stats(profile).sort_stats('cumulative')
+        stats.print_stats()
+    else:
+        start_time = default_timer()
+        main(args)
+        end_time = default_timer()
+        logger.info("Simulation finished in {} seconds".format(
+                end_time - start_time))
