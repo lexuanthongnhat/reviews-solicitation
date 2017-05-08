@@ -25,16 +25,15 @@ class ReviewsSolicitation(ABC):
         dataset_profile: SimulationStats object, default=None
             dataset's profile
         poll_to_cost: dict
-            cost change over each time of asking questions
-    """
-    pick_methods = ['pick_highest_cost',
-                    'pick_with_prob',
-                    'pick_random']
+            cost change over each time of asking questions """
+    # pick_methods = ['pick_highest_cost',
+                    # 'pick_with_prob',
+                    # 'pick_random']
 
     answer_methods = ['answer_by_gen',
                       'answer_in_time_order']
 
-    # pick_methods = ['pick_highest_cost']
+    pick_methods = ['pick_highest_cost', 'pick_least_count']
     # answer_methods = ['answer_by_gen']
 
     def __init__(self, reviews,
@@ -177,6 +176,20 @@ class ReviewsSolicitation(ABC):
             picked_feature = np.random.choice(self.features)
             if picked_feature.idx not in already_picked_idx:
                 return picked_feature
+
+    def pick_least_count(self, already_picked_idx):
+        """Pick a feature with least number of ratings.
+        Args:
+            already_picked_idx: list
+                list of already picked feature indexes
+        Returns:
+            datamodel.Feature
+        """
+        rating_counts = self.uncertainty_book.get_rating_count()
+        if already_picked_idx:
+            rating_counts[already_picked_idx] = -float('inf')
+        max_idx = np.argmax(rating_counts)
+        return self.features[max_idx]
 
 
 class SimulationStats(object):

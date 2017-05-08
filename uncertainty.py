@@ -183,6 +183,14 @@ class UncertaintyBook(object):
                                                         metric.correlated)
         return cor_uncertainties.sum()
 
+    def get_rating_count(self):
+        """Get the number of rating per feature.
+
+        Returns:
+            1d numpy array, number of elements = feature_count
+        """
+        return np.sum(self.ratings, axis=1)
+
     def rate_feature(self, feature, star, count=1):
         """ Rate a single feature."""
         if star < 1 or star > self.star_rank:
