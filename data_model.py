@@ -44,19 +44,21 @@ class Review(ABC):
         Args:
             reviews: list of Review
         Returns:
-            star_dist: np.array of star's distribution
+            feature_to_star_dist: dict: feature's name -> np.array of
+                star's distribution
         """
         if not reviews:
             return None
 
-        star_to_count = {i: 0 for i in range(1, reviews[0].star_rank + 1)}
+        star_rank = reviews[0].star_rank
+        feature_to_stars = defaultdict(lambda: np.ones(star_rank))
         for review in reviews:
             for feature, star in review.feature_to_star.items():
-                star_to_count[star] += 1
-        ordered_counts = [star_to_count[star]
-                          for star in range(1, reviews[0].star_rank + 1)]
-        star_dist = np.array(ordered_counts) / sum(ordered_counts)
-        return star_dist
+                feature_to_stars[feature][star - 1] += 1
+
+        feature_to_star_dist = {feature: stars / np.sum(stars)
+                                for feature, stars in feature_to_stars.items()}
+        return feature_to_star_dist
 
     @classmethod
     def probe_dataset(cls, product_to_reviews):
@@ -160,6 +162,7 @@ class Feature(object):
         idx: int, starting from 0
             can be used to look up in uncertainty.UncertaintyBook
         name: string
+            must be unique, used in Review object
     """
     def __init__(self, idx, name):
         self.idx = idx

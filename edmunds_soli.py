@@ -1,7 +1,6 @@
 import numpy as np
 
 from reviews_soli import ReviewsSolicitation
-from data_model import Review
 
 
 class EdmundsReviewSolicitation(ReviewsSolicitation):
@@ -17,8 +16,8 @@ class EdmundsReviewSolicitation(ReviewsSolicitation):
         Returns:
             answered_star: int
         """
-        star_dist = Review.sample_star_dist(self.reviews)
-        stars = np.arange(1, len(star_dist) + 1, 1)
+        star_dist = self.feature_to_star_dist[picked_feature.name]
+        stars = np.arange(1, self.star_rank + 1, 1)
         answered_star = np.random.choice(stars, p=star_dist)
         return answered_star
 

@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 
-from data_model import Feature
+from data_model import Feature, Review
 from uncertainty import UncertaintyBook, UncertaintyReport
 
 
@@ -50,6 +50,7 @@ class ReviewsSolicitation(ABC):
             raise ValueError('Empty or None reviews')
         self.original_reviews = reviews
         self.reviews = reviews.copy()
+        self.feature_to_star_dist = Review.sample_star_dist(reviews)
         self.star_rank = reviews[0].star_rank
 
         self.poll_count = poll_count if poll_count <= len(reviews)\
