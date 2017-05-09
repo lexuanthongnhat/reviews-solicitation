@@ -1,5 +1,5 @@
 import unittest
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 
 import numpy as np
 import scipy.stats as stats
@@ -210,8 +210,10 @@ class UncertaintyBook(object):
 
 class UncertaintyReport(object):
 
-    def __init__(self, **kargs):
+    def __init__(self, metric_to_uncertainty_total={}):
         self.uncertainty_totals = defaultdict(float)
+        for metric, uncertainty in metric_to_uncertainty_total.items():
+            self.uncertainty_totals[metric] = uncertainty
 
     def add_uncertainty(self, metric, uncertainty_total):
         self.uncertainty_totals[metric] = uncertainty_total
@@ -226,6 +228,18 @@ class UncertaintyReport(object):
 
     def get_metric(self, metric):
         return self.uncertainty_totals[metric]
+
+    @classmethod
+    def reports_average(cls, uncertainty_reports):
+        if not uncertainty_reports or len(uncertainty_reports) < 1:
+            raise ValueError('Empty uncertainty_reports')
+        uncertainty_average = OrderedDict()
+        for metric in uncertainty_reports[0].metrics():
+            uncertainty_average[metric] = 0
+            for report in uncertainty_reports:
+                uncertainty_average[metric] += report.get_metric(metric)
+            uncertainty_average[metric] /= len(uncertainty_reports)
+        return cls(metric_to_uncertainty_total=uncertainty_average)
 
 
 def weighted_uncertainty(uncertainty, rating_count,

@@ -1,10 +1,10 @@
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from abc import ABC, abstractmethod
 
 import numpy as np
 
 from data_model import Feature
-from uncertainty import UncertaintyBook
+from uncertainty import UncertaintyBook, UncertaintyReport
 
 
 class ReviewsSolicitation(ABC):
@@ -26,14 +26,15 @@ class ReviewsSolicitation(ABC):
             dataset's profile
         poll_to_cost: dict
             cost change over each time of asking questions """
-    # pick_methods = ['pick_highest_cost',
-                    # 'pick_with_prob',
-                    # 'pick_random']
+    pick_methods = ['pick_highest_cost',
+                    'pick_with_prob',
+                    'pick_random',
+                    'pick_least_count']
 
     answer_methods = ['answer_by_gen',
                       'answer_in_time_order']
 
-    pick_methods = ['pick_highest_cost', 'pick_least_count']
+    # pick_methods = ['pick_highest_cost', 'pick_least_count']
     # answer_methods = ['answer_by_gen']
 
     def __init__(self, reviews,
@@ -206,6 +207,7 @@ class SimulationStats(object):
     def __init__(self, poll_count, question_count,
                  poll_to_cost, final_features, final_ratings):
         self.poll_count = poll_count
+        self.question_count = question_count
         self.poll_to_cost = poll_to_cost
         self.polls = list(self.poll_to_cost.keys())
         self.uncertainty_reports = list(self.poll_to_cost.values())
@@ -232,3 +234,25 @@ class SimulationStats(object):
                                           self.final_ratings[feature.idx])
         stat_str += '/no_answer_count={}'.format(self.no_answer_count)
         return stat_str
+
+    @classmethod
+    def sim_stats_average(cls, sim_statses):
+        """Averaging multiple product's sim stats."""
+        poll_to_costs = defaultdict(list)
+        poll_count = max([len(sim_stats.polls) for sim_stats in sim_statses])
+        for poll in range(poll_count):
+            for sim_stats in sim_statses:
+                if poll >= len(sim_stats.polls):
+                    continue
+                poll_to_costs[poll].append(sim_stats.poll_to_cost[poll])
+
+        poll_to_cost_average = OrderedDict()
+        for poll, costs in poll_to_costs.items():
+            poll_to_cost_average[poll] = UncertaintyReport.reports_average(
+                    costs)
+
+        return SimulationStats(len(poll_to_costs),
+                               sim_statses[0].question_count,
+                               poll_to_cost_average,
+                               [],
+                               None)

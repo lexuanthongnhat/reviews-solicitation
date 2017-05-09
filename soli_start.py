@@ -8,7 +8,7 @@ import pstats
 from timeit import default_timer
 
 import data_model
-from reviews_soli import ReviewsSolicitation
+from reviews_soli import ReviewsSolicitation, SimulationStats
 from edmunds import EdmundsReview
 from edmunds_soli import EdmundsReviewSolicitation
 from uncertainty import UncertaintyBook
@@ -171,6 +171,27 @@ def simulate_reviews_soli_per_product(
         logger.debug(sim_stat.stats_str(pick_method + ' - ' + answer_method))
 
     return pick_answer_to_sim_stats
+
+
+def summary_sim_stats(product_to_result_stats):
+    """Summary simulation statistics of multiple products.
+    Args:
+        product_to_result_stats: dict, product -> pick_answer_to_sim_stats
+            pick_answer_to_sim_stats is a dict returned by
+            simulate_reviews_soli_per_product
+    """
+    pick_answer_to_sim_statses = OrderedDict()
+    for pick_answer_to_sim_stats in product_to_result_stats.values():
+        for pick_answer, sim_stats in pick_answer_to_sim_stats.items():
+            if pick_answer not in pick_answer_to_sim_statses:
+                pick_answer_to_sim_statses[pick_answer] = []
+            pick_answer_to_sim_statses[pick_answer].append(sim_stats)
+
+    pick_answer_to_sim_stats_average = OrderedDict()
+    for pick_answer, sim_statses in pick_answer_to_sim_statses.items():
+        pick_answer_to_sim_stats_average[pick_answer] = \
+                SimulationStats.sim_stats_average(sim_statses)
+    return pick_answer_to_sim_stats_average
 
 
 def probe_dataset(file_path, star_rank=5, dataset='edmunds'):
