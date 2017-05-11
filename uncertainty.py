@@ -1,5 +1,5 @@
 import unittest
-from collections import defaultdict, OrderedDict
+from collections import OrderedDict
 
 import numpy as np
 import scipy.stats as stats
@@ -11,33 +11,41 @@ class UncertaintyMetric(object):
     Attributes:
         criterion: str,
             individual/independent uncertainty of a single feature
-        weighted: Boolean, default=False,
+        weighted: bool, default=False,
             weighted by global/prior uncertainty information
-        correlated: Boolean, default=False,
+        correlated: bool, default=False,
             infer a feature's uncertainty by other highly correlated features
+        cor_norm_factor: float, default=1.0
+            normalization factor for correlation
     """
-    def __init__(self, criterion, weighted=False, correlated=False):
+    def __init__(self, criterion, weighted=False, correlated=False,
+                 cor_norm_factor=1.0):
         self.criterion = criterion
         self.weighted = weighted
         self.correlated = correlated
+        self.cor_norm_factor = cor_norm_factor
 
     def __repr__(self):
         metric_str = self.criterion
         metric_str += '_weighted' if self.weighted else ''
-        metric_str += '_correlated' if self.weighted else ''
+        metric_str += '_correlated' if self.correlated else ''
+        if self.correlated and self.cor_norm_factor != 1.0:
+            metric_str += '_factor_{}'.format(self.cor_norm_factor)
         return metric_str
 
     def __eq__(self, other):
         return isinstance(other, self.__class__) \
                 and self.criterion == other.criterion \
                 and self.weighted == other.weighted \
-                and self.correlated == other.correlated
+                and self.correlated == other.correlated \
+                and self.cor_norm_factor == other.cor_norm_factor
 
     def __neq__(self, other):
         return not self.__eq__(other)
 
     def __hash__(self):
-        return hash((self.criterion, self.weighted, self.correlated))
+        return hash((self.criterion, self.weighted, self.correlated,
+                     self.cor_norm_factor))
 
 
 class UncertaintyBook(object):
@@ -73,9 +81,13 @@ class UncertaintyBook(object):
             UncertaintyMetric('dirichlet_var_sum', weighted=True,
                               correlated=False),
             UncertaintyMetric('expected_rating_var', weighted=False,
+                              correlated=False),
+            UncertaintyMetric('expected_rating_var', weighted=False,
                               correlated=True),
             UncertaintyMetric('expected_rating_var', weighted=False,
-                              correlated=False),
+                              correlated=True, cor_norm_factor=0.8),
+            UncertaintyMetric('expected_rating_var', weighted=False,
+                              correlated=True, cor_norm_factor=0.7),
             UncertaintyMetric('expected_rating_var', weighted=True,
                               correlated=False),
             UncertaintyMetric('expected_rating_var', weighted=True,
@@ -84,12 +96,13 @@ class UncertaintyBook(object):
                               correlated=False)
             ]
 
-    optimization_goals = uncertainty_metrics[:2]
+    optimization_goals = uncertainty_metrics[:6]
 
     def __init__(self, star_rank, feature_count,
                  criterion='expected_rating_var',
                  weighted=False,
                  correlated=False,
+                 cor_norm_factor=1.0,
                  dataset_profile=None,
                  confidence_level=0.95):
         if star_rank < 2 or feature_count < 1:
@@ -100,6 +113,7 @@ class UncertaintyBook(object):
         self.feature_count = feature_count
         self.criterion = criterion
         self.correlated = correlated
+        self.cor_norm_factor = cor_norm_factor
         self.weighted = weighted
         self.dataset_profile = dataset_profile
         self.confidence_level = confidence_level
@@ -127,18 +141,19 @@ class UncertaintyBook(object):
         """
         self.independent_uncertainties, self.uncertainties = \
             self.compute_uncertainty(self.criterion, self.weighted,
-                                     self.correlated)
+                                     self.correlated, self.cor_norm_factor)
 
     def compute_uncertainty(self, uncertainty_func_name,
-                            weighted, correlated):
+                            weighted, correlated, cor_norm_factor):
         """Compute uncertainty using different criteria.
 
         Args:
             uncertainty_func_name: str
                 function name of this module, e.g. 'dirichlet_var_sum',
                 'expected_rating_var', 'pearson_cor', 'confidence_interval_len'
-            weighted: Boolean
-            correlated: Boolean
+            weighted: bool
+            correlated: bool
+            cor_norm_factor: float
         Returns:
             (indept_uncertainties, cor_uncertainties)
         """
@@ -157,6 +172,8 @@ class UncertaintyBook(object):
                 pearson_cor_on_flatten, 2,
                 self.co_ratings.reshape(self.feature_count, self.feature_count,
                                         self.star_rank * self.star_rank))
+            if cor_norm_factor != 1.0:
+                correlations = correlations / cor_norm_factor
             np.fill_diagonal(correlations, 1)
             correlated_var = indept_uncertainties.reshape(
                 self.feature_count, 1) / np.abs(correlations)
@@ -180,7 +197,8 @@ class UncertaintyBook(object):
         """
         _, cor_uncertainties = self.compute_uncertainty(metric.criterion,
                                                         metric.weighted,
-                                                        metric.correlated)
+                                                        metric.correlated,
+                                                        metric.cor_norm_factor)
         return cor_uncertainties.sum()
 
     def get_rating_count(self):
@@ -211,7 +229,7 @@ class UncertaintyBook(object):
 class UncertaintyReport(object):
 
     def __init__(self, metric_to_uncertainty_total={}):
-        self.uncertainty_totals = defaultdict(float)
+        self.uncertainty_totals = OrderedDict()
         for metric, uncertainty in metric_to_uncertainty_total.items():
             self.uncertainty_totals[metric] = uncertainty
 

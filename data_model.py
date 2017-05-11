@@ -11,8 +11,15 @@ class Review(ABC):
         star_rank: int (default=5), number of star levels
     """
     @property
+    @classmethod
     @abstractmethod
     def seed_features(self):
+        return "Please implement this property!"
+
+    @property
+    @classmethod
+    @abstractmethod
+    def dup_scenario_features(self):
         return "Please implement this property!"
 
     def __init__(self, feature_to_star, star_rank=5):
@@ -29,11 +36,12 @@ class Review(ABC):
 
     @classmethod
     @abstractmethod
-    def import_csv(cls, file_path, star_rank=5):
+    def import_csv(cls, file_path, star_rank=5, duplicate=False):
         """
         Args:
-            file_path (string)
-            star_rank (int): e.g. 5 means 1, 2, 3, 4 and 5 stars system
+            file_path: string
+            star_rank: int, e.g. 5 means 1, 2, 3, 4 and 5 stars system
+            duplicate: bool, default=False, duplicate experiment scenario
         Returns:
             product_to_reviews (dict): product -> list of Reviews
         """

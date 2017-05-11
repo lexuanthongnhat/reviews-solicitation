@@ -44,8 +44,9 @@ class ReviewsSolicitation(ABC):
                  criterion='expected_rating_var',
                  weighted=False,
                  correlated=False,
+                 cor_norm_factor=1.0,
                  dataset_profile=None,
-                 **kargs):
+                 **kwargs):
         if len(reviews) < 1:
             raise ValueError('Empty or None reviews')
         self.original_reviews = reviews
@@ -59,10 +60,15 @@ class ReviewsSolicitation(ABC):
         self.criterion = criterion
         self.weighted = weighted
         self.correlated = correlated
+        self.cor_norm_factor = cor_norm_factor
 
         self.seed_features = seed_features
         self.features = [Feature(i, feature_name)
                          for i, feature_name in enumerate(self.seed_features)]
+        self.duplicate = True if kwargs['duplicate'] else False
+        if self.duplicate:
+            # 2 duplicate features' index in Review.dup_scenario_features
+            self.duplicate_feature_idx = [1, 2]
 
         # Keep track feature's uncertainty
         self.uncertainty_book = UncertaintyBook(
@@ -71,10 +77,13 @@ class ReviewsSolicitation(ABC):
                 criterion=criterion,
                 weighted=weighted,
                 correlated=correlated,
+                cor_norm_factor=cor_norm_factor,
                 dataset_profile=dataset_profile,
-                confidence_level=kargs['confidence_level'])
+                confidence_level=kwargs['confidence_level'])
         self.poll_to_cost = OrderedDict()
         self.poll_to_cost[0] = self.uncertainty_book.report_uncertainty()
+        self.poll_to_ratings = OrderedDict()
+        self.poll_to_ratings[0] = np.copy(self.uncertainty_book.ratings)
 
     def simulate(self, pick_method, answer_method):
         """Simulate the asking-aswering process."""
@@ -93,6 +102,15 @@ class ReviewsSolicitation(ABC):
                 answered_star = self.__getattribute__(answer_method)(
                         picked_feature)
 
+                # In duplicate feature scenario: make sure dup features get
+                # the same star.
+                if self.duplicate and already_picked_idx \
+                        and picked_feature.idx in self.duplicate_feature_idx:
+                    for pre_rated_feature, pre_star in rated_features:
+                        if pre_rated_feature.idx in self.duplicate_feature_idx:
+                            answered_star = pre_star
+                            break
+
                 # Update ratings, rating's uncertainty
                 already_picked_idx.append(picked_feature.idx)
                 if answered_star:
@@ -104,15 +122,17 @@ class ReviewsSolicitation(ABC):
                             self.uncertainty_book.rate_2features(
                                     pre_rated_feature, pre_star,
                                     picked_feature, answered_star)
-                        rated_features.append((picked_feature, answered_star))
+                    rated_features.append((picked_feature, answered_star))
                 else:
                     picked_feature.no_answer_count += 1
             self.poll_to_cost[i + 1] = \
                 self.uncertainty_book.report_uncertainty()
+            self.poll_to_ratings[i + 1] = \
+                np.copy(self.uncertainty_book.ratings)
 
         return SimulationStats(self.poll_count, self.question_count,
-                               self.poll_to_cost, self.features,
-                               self.uncertainty_book.ratings)
+                               self.poll_to_cost, self.poll_to_ratings,
+                               self.features, self.uncertainty_book.ratings)
 
     @abstractmethod
     def answer_by_gen(self, picked_feature):
@@ -206,12 +226,15 @@ class SimulationStats(object):
         final_ratings: 2d np array, from UncertaintyBook.ratings
     """
     def __init__(self, poll_count, question_count,
-                 poll_to_cost, final_features, final_ratings):
+                 poll_to_cost, poll_to_ratings,
+                 final_features, final_ratings):
         self.poll_count = poll_count
         self.question_count = question_count
         self.poll_to_cost = poll_to_cost
         self.polls = list(self.poll_to_cost.keys())
         self.uncertainty_reports = list(self.poll_to_cost.values())
+
+        self.poll_to_ratings = poll_to_ratings
         self.final_features = final_features
         self.no_answer_count = sum([feature.no_answer_count
                                     for feature in self.final_features])
@@ -255,5 +278,5 @@ class SimulationStats(object):
         return SimulationStats(len(poll_to_costs),
                                sim_statses[0].question_count,
                                poll_to_cost_average,
-                               [],
+                               {}, [],
                                None)

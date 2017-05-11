@@ -7,7 +7,7 @@ import cProfile
 import pstats
 from timeit import default_timer
 
-import data_model
+from data_model import Review
 from reviews_soli import ReviewsSolicitation, SimulationStats
 from edmunds import EdmundsReview
 from edmunds_soli import EdmundsReviewSolicitation
@@ -32,14 +32,19 @@ def main(args):
     Attributes:
         args: Namespace object, return by ArgumentParser.parse_args()
     """
-    dataset_profile = probe_dataset(args.input)
+    review_cls, _ = dataset_to_review_and_sim_cls[args.dataset]
+    product_to_reviews = review_cls.import_csv(args.input,
+                                               star_rank=args.star_rank,
+                                               duplicate=args.duplicate)
+
+    dataset_profile = Review.probe_dataset(product_to_reviews)
     logger.info('Number of products: {}'.format(dataset_profile.product_count))
 
     optim_goal_to_product_result_stats = OrderedDict()
     for optim_goal in UncertaintyBook.optimization_goals:
         logger.debug('Optimization goal: "{}"'.format(optim_goal))
         product_to_result_stats = simulate_reviews_soli(
-                args.input,
+                product_to_reviews,
                 star_rank=args.star_rank,
                 dataset=args.dataset,
                 poll_count=args.poll_count,
@@ -48,8 +53,10 @@ def main(args):
                 criterion=optim_goal.criterion,
                 weighted=optim_goal.weighted,
                 correlated=optim_goal.correlated,
+                cor_norm_factor=optim_goal.cor_norm_factor,
                 dataset_profile=dataset_profile,
-                confidence_level=args.confidence_level)
+                confidence_level=args.confidence_level,
+                duplicate=args.duplicate)
         optim_goal_to_product_result_stats[optim_goal] = \
             product_to_result_stats
 
@@ -57,7 +64,7 @@ def main(args):
         pickle.dump(optim_goal_to_product_result_stats, result_file)
 
 
-def simulate_reviews_soli(file_path,
+def simulate_reviews_soli(product_to_reviews,
                           star_rank=5,
                           dataset='edmunds',
                           poll_count=-1,
@@ -66,11 +73,12 @@ def simulate_reviews_soli(file_path,
                           criterion='expected_rating_var',
                           weighted=False,
                           correlated=False,
+                          cor_norm_factor=1.0,
                           dataset_profile=None,
-                          **kargs):
+                          **kwargs):
     """Simulate the asking process
     Args:
-        file_path: string
+        product_to_reviews: dict, product -> list of data_model.Review
         star_rank: int
             e.g. 5 means 1, 2, 3, 4 and 5 stars system
         dataset: string, default='edmunds'
@@ -93,14 +101,14 @@ def simulate_reviews_soli(file_path,
             product -> sim_stats (list of SimulationStats, corresponding to
             ReviewsSolicitation.pick_methods/answer_methods)
     """
-    review_cls, review_soli_sim_cls = dataset_to_review_and_sim_cls[dataset]
-
-    product_to_reviews = review_cls.import_csv(file_path, star_rank=star_rank)
     product_to_reviews = {key: value
                           for key, value in product_to_reviews.items()
                           if len(value) >= review_count_lowbound}
     logger.info('# products simulated: {}'.format(len(product_to_reviews)))
 
+    review_cls, review_soli_sim_cls = dataset_to_review_and_sim_cls[dataset]
+    seed_features = review_cls.dup_scenario_features if kwargs['duplicate'] \
+        else review_cls.seed_features
     product_to_result_stats = {}
     for product, reviews in product_to_reviews.items():
         logger.debug('feature ratings: {}'.format(
@@ -109,12 +117,13 @@ def simulate_reviews_soli(file_path,
             reviews, review_soli_sim_cls,
             poll_count=poll_count,
             question_count=question_count,
-            seed_features=review_cls.seed_features,
+            seed_features=seed_features,
             weighted=weighted,
             criterion=criterion,
             correlated=correlated,
+            cor_norm_factor=cor_norm_factor,
             dataset_profile=dataset_profile,
-            **kargs)
+            **kwargs)
 
     return product_to_result_stats
 
@@ -127,8 +136,9 @@ def simulate_reviews_soli_per_product(
         criterion='weighted_sum_dirichlet_variances',
         weighted=False,
         correlated=False,
+        cor_norm_factor=1.0,
         dataset_profile=None,
-        **kargs):
+        **kwargs):
     """
     Args:
         reviews: list of Review
@@ -157,15 +167,17 @@ def simulate_reviews_soli_per_product(
     for answer_method, pick_method in itertools.product(
             ReviewsSolicitation.answer_methods,
             ReviewsSolicitation.pick_methods):
-        reviews_soli_sim = review_soli_sim_cls(reviews,
-                                               poll_count=poll_count,
-                                               question_count=question_count,
-                                               seed_features=seed_features,
-                                               criterion=criterion,
-                                               weighted=weighted,
-                                               correlated=correlated,
-                                               dataset_profile=dataset_profile,
-                                               **kargs)
+        reviews_soli_sim = review_soli_sim_cls(
+                reviews,
+                poll_count=poll_count,
+                question_count=question_count,
+                seed_features=seed_features,
+                criterion=criterion,
+                weighted=weighted,
+                correlated=correlated,
+                cor_norm_factor=cor_norm_factor,
+                dataset_profile=dataset_profile,
+                **kwargs)
         sim_stat = reviews_soli_sim.simulate(pick_method, answer_method)
         pick_answer_to_sim_stats[(pick_method, answer_method)] = sim_stat
         logger.debug(sim_stat.stats_str(pick_method + ' - ' + answer_method))
@@ -194,6 +206,25 @@ def summary_sim_stats(product_to_result_stats):
     return pick_answer_to_sim_stats_average
 
 
+def summary_optim_goal_ratings(optim_goal_to_product_result_stats):
+    """Summary multiple optimization goals.
+    TODO - should summary base on same poll or same cost (uncertainty)?
+
+    Args:
+        optim_goal_to_product_result_stats: dict,
+            optim_goal(UncertaintyMetric) -> product_to_result_stats (output of
+            simulate_reviews_soli function)
+    """
+    poll_to_optim_goal_ratings = OrderedDict()
+    for optim_goal, product_to_result_stats in \
+            optim_goal_to_product_result_stats.items():
+        for pick_answer_to_sim_stats in product_to_result_stats.values():
+            for pick_answer, sim_stats in pick_answer_to_sim_stats.items():
+                pass
+
+    return poll_to_optim_goal_ratings
+
+
 def probe_dataset(file_path, star_rank=5, dataset='edmunds'):
     """Profiling the dataset
     Args:
@@ -206,7 +237,7 @@ def probe_dataset(file_path, star_rank=5, dataset='edmunds'):
     review_cls, _ = dataset_to_review_and_sim_cls[dataset]
 
     product_to_reviews = review_cls.import_csv(file_path, star_rank=star_rank)
-    dataset_profile = data_model.Review.probe_dataset(product_to_reviews)
+    dataset_profile = Review.probe_dataset(product_to_reviews)
     return dataset_profile
 
 
@@ -242,7 +273,13 @@ if __name__ == '__main__':
     parser.add_argument(
             "--profile", action="store_true",
             help="Profile the program")
+    parser.add_argument(
+            "--duplicate", action="store_true",
+            help="Duplicate scenario for experimentation: 3 features, "
+                 "2 are duplicate, ask 2 question per poll")
     args = parser.parse_args()
+    if args.duplicate:
+        args.question_count = 2
 
     logger.setLevel(getattr(logging, args.loglevel.upper()))
     logger.debug("args: {}".format(args))

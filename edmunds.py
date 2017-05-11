@@ -52,14 +52,20 @@ class EdmundsReview(Review):
     seed_features = main_features
     non_rare_features = ['performanceRating', 'comfortRating',
                          'interiorRating', 'reliabilityRating', 'valueRating']
+    dup_scenario_features = ['performanceRating',
+                             'comfortRating', 'comfortStar']
     minor_features = [fture for ftures in features_dict.values()
                       for fture in ftures]
     overall_rating = 'userRating'
 
     @classmethod
-    def import_csv(cls, file_path, star_rank=5):
+    def import_csv(cls, file_path, star_rank=5, duplicate=False):
         """Import Edmund dataset from csv file
 
+        Args:
+            file_path: string
+            star_rank: int, e.g. 5 means 1, 2, 3, 4 and 5 stars system
+            duplicate: bool, default=False, duplicate experiment scenario
         Returns:
             car_to_reviews: dict of car -> list of time-sorted EdmundsReview
         """
@@ -91,7 +97,29 @@ class EdmundsReview(Review):
                           row["year"], row["styleId"])
                 car_to_reviews[car].append(
                     cls(feature_to_star, star_rank=star_rank))
+
+        # Duplicate feature scenario: just for experimentation
+        if duplicate:
+            car_to_reviews = cls.create_duplicate_scenario(car_to_reviews)
         return car_to_reviews
+
+    @classmethod
+    def create_duplicate_scenario(cls, car_to_reviews):
+        car_to_reviews_trim = defaultdict(list)
+        for car, reviews in car_to_reviews.items():
+            for review in reviews:
+                dup_feature_to_star = {}
+                for feature in cls.dup_scenario_features:
+                    if feature in review.features:
+                        dup_feature_to_star[feature] = review.feature_to_star[
+                                feature]
+                if cls.dup_scenario_features[-2] in review.features:
+                    dup_feature_to_star[cls.dup_scenario_features[-1]] = \
+                        review.feature_to_star[cls.dup_scenario_features[-2]]
+                car_to_reviews_trim[car].append(cls(dup_feature_to_star,
+                                                    review.star_rank))
+
+        return car_to_reviews_trim
 
 
 class Car(object):
