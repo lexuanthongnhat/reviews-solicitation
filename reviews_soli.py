@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 
 from data_model import Feature, Review
-from uncertainty import UncertaintyBook, UncertaintyReport
+from uncertainty import UncertaintyBook, UncertaintyReport, UncertaintyMetric
 
 
 class ReviewsSolicitation(ABC):
@@ -74,12 +74,11 @@ class ReviewsSolicitation(ABC):
         self.uncertainty_book = UncertaintyBook(
                 self.star_rank,
                 len(self.features),
-                criterion=criterion,
-                weighted=weighted,
-                correlated=correlated,
-                cor_norm_factor=cor_norm_factor,
-                dataset_profile=dataset_profile,
-                confidence_level=kwargs['confidence_level'])
+                metric=UncertaintyMetric(criterion,
+                                         weighted=weighted,
+                                         correlated=correlated,
+                                         cor_norm_factor=cor_norm_factor),
+                dataset_profile=dataset_profile)
         self.poll_to_cost = OrderedDict()
         self.poll_to_cost[0] = self.uncertainty_book.report_uncertainty()
         self.poll_to_ratings = OrderedDict()

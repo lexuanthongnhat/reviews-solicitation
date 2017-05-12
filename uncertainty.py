@@ -1,4 +1,5 @@
 import unittest
+import itertools
 from collections import OrderedDict
 
 import numpy as np
@@ -19,14 +20,17 @@ class UncertaintyMetric(object):
             normalization factor for correlation
     """
     def __init__(self, criterion, weighted=False, correlated=False,
-                 cor_norm_factor=1.0):
+                 cor_norm_factor=1.0, confid_select=np.average):
         self.criterion = criterion
         self.weighted = weighted
         self.correlated = correlated
         self.cor_norm_factor = cor_norm_factor
+        self.confid_select = confid_select
 
     def __repr__(self):
         metric_str = self.criterion
+        if self.criterion.find('confidence') >= 0:
+            metric_str += self.confid_select.__name__
         metric_str += '_weighted' if self.weighted else ''
         metric_str += '_correlated' if self.correlated else ''
         if self.correlated and self.cor_norm_factor != 1.0:
@@ -38,14 +42,15 @@ class UncertaintyMetric(object):
                 and self.criterion == other.criterion \
                 and self.weighted == other.weighted \
                 and self.correlated == other.correlated \
-                and self.cor_norm_factor == other.cor_norm_factor
+                and self.cor_norm_factor == other.cor_norm_factor \
+                and self.confid_select == other.confid_select
 
     def __neq__(self, other):
         return not self.__eq__(other)
 
     def __hash__(self):
         return hash((self.criterion, self.weighted, self.correlated,
-                     self.cor_norm_factor))
+                     self.cor_norm_factor, self.confid_select))
 
 
 class UncertaintyBook(object):
@@ -86,42 +91,34 @@ class UncertaintyBook(object):
                               correlated=True),
             UncertaintyMetric('expected_rating_var', weighted=False,
                               correlated=True, cor_norm_factor=0.8),
-            UncertaintyMetric('expected_rating_var', weighted=False,
-                              correlated=True, cor_norm_factor=0.7),
             UncertaintyMetric('expected_rating_var', weighted=True,
                               correlated=False),
             UncertaintyMetric('expected_rating_var', weighted=True,
                               correlated=True),
-            UncertaintyMetric('confidence_interval_len', weighted=False,
-                              correlated=False)
+            UncertaintyMetric('confidence_interval_len'),
+            UncertaintyMetric('confidence_interval_len', confid_select=np.max),
+            UncertaintyMetric('confidence_region_vol'),
+            UncertaintyMetric('confidence_region_vol', confid_select=np.max)
             ]
 
-    optimization_goals = uncertainty_metrics[:6]
+    optimization_goals = uncertainty_metrics[:5]
 
-    def __init__(self, star_rank, feature_count,
-                 criterion='expected_rating_var',
-                 weighted=False,
-                 correlated=False,
-                 cor_norm_factor=1.0,
-                 dataset_profile=None,
-                 confidence_level=0.95):
+    def __init__(self, star_rank, feature_count, metric=None,
+                 dataset_profile=None):
         if star_rank < 2 or feature_count < 1:
             raise ValueError('Invalid values of star_rank (>= 2) or '
                              'feature_count (>= 1)')
 
         self.star_rank = star_rank
         self.feature_count = feature_count
-        self.criterion = criterion
-        self.correlated = correlated
-        self.cor_norm_factor = cor_norm_factor
-        self.weighted = weighted
+        self.metric = metric
+
         self.dataset_profile = dataset_profile
-        self.confidence_level = confidence_level
         if dataset_profile:
             self.prior_rating_count = \
                 dataset_profile.feature_rating_count_average
             ratings_uncertainties = np.apply_along_axis(
-                globals()[criterion], 1,
+                globals()[metric.criterion], 1,
                 np.array(dataset_profile.feature_ratings))
             self.prior_uncertainty = np.average(ratings_uncertainties)
             self.prior_uncertainty_total = self.prior_rating_count * \
@@ -140,11 +137,9 @@ class UncertaintyBook(object):
         Calculate based on self.criterion, self.weighted, self.correlated
         """
         self.independent_uncertainties, self.uncertainties = \
-            self.compute_uncertainty(self.criterion, self.weighted,
-                                     self.correlated, self.cor_norm_factor)
+            self.compute_uncertainty(self.metric)
 
-    def compute_uncertainty(self, uncertainty_func_name,
-                            weighted, correlated, cor_norm_factor):
+    def compute_uncertainty(self, metric):
         """Compute uncertainty using different criteria.
 
         Args:
@@ -157,23 +152,32 @@ class UncertaintyBook(object):
         Returns:
             (indept_uncertainties, cor_uncertainties)
         """
+        if metric.criterion == 'confidence_region_vol' \
+                and metric.confid_select:
+            confid_region_vols = np.apply_along_axis(
+                globals()[metric.criterion], 2,
+                self.co_ratings.reshape(self.feature_count, self.feature_count,
+                                        self.star_rank * self.star_rank))
+            cor_uncertainties = metric.confid_select(confid_region_vols)
+            return (cor_uncertainties, cor_uncertainties)
+
         indept_uncertainties = np.apply_along_axis(
-            globals()[uncertainty_func_name], 1, self.ratings)
-        if weighted:
+            globals()[metric.criterion], 1, self.ratings)
+        if metric.weighted:
             rating_counts = np.sum(self.ratings, axis=1)
             indept_uncertainties = (indept_uncertainties * rating_counts
                                     + self.prior_uncertainty_total) / (
                                     rating_counts + self.prior_rating_count)
 
-        if not correlated:
+        if not metric.correlated:
             cor_uncertainties = np.copy(indept_uncertainties)
         else:
             correlations = np.apply_along_axis(
                 pearson_cor_on_flatten, 2,
                 self.co_ratings.reshape(self.feature_count, self.feature_count,
                                         self.star_rank * self.star_rank))
-            if cor_norm_factor != 1.0:
-                correlations = correlations / cor_norm_factor
+            if metric.cor_norm_factor != 1.0:
+                correlations = correlations / metric.cor_norm_factor
             np.fill_diagonal(correlations, 1)
             correlated_var = indept_uncertainties.reshape(
                 self.feature_count, 1) / np.abs(correlations)
@@ -195,10 +199,9 @@ class UncertaintyBook(object):
         Returns:
             sum of all features' uncertainties, float
         """
-        _, cor_uncertainties = self.compute_uncertainty(metric.criterion,
-                                                        metric.weighted,
-                                                        metric.correlated,
-                                                        metric.cor_norm_factor)
+        _, cor_uncertainties = self.compute_uncertainty(metric)
+        if metric.criterion == 'confidence_region_vol':
+            return metric.confid_select(cor_uncertainties)
         return cor_uncertainties.sum()
 
     def get_rating_count(self):
@@ -357,6 +360,61 @@ def confidence_interval_len(rating_counts, confidence_level=0.95):
     return upper - lower
 
 
+def confidence_region_vol(co_rating_samples_flatten, confidence_level=0.95):
+    """Confidence region volumn of feature pair using Hotelling distribution.
+        Google keyword: confidence region vector mean
+        Ellipse axes follow:
+            sqrt(lambda_i) * sqrt((p(n - 1) / n(n - p)) * F(alpha, p, n - p))
+            * e_i
+            lambda_i, e_i are eigenvalue, eigenvector of covariance matrix
+            p: dimension of random vector
+            n: number of observations/samples
+            alpha: confidence level (normally: 0.95, i.e. 95%)
+            F(alpha, p, n - p): follow F distribution
+    Args:
+        co_rating_samples_flatten: flatten co_ratings matrix of a single
+            feature pair's in UncertaintyBook.co_ratings
+    Returns:
+        vol_without_pi: volumn of confidence region (ellipse).
+            Note: vol = pi * major_axis * minor_axis but we discard "pi" since
+            it has no role in relative comparison between features
+    """
+    co_ratings_raw = _convert_co_rating_flatten_to_raw(
+            co_rating_samples_flatten)
+    p = 2
+    n = co_ratings_raw.shape[1]
+    cov_matrix = np.cov(co_ratings_raw)
+    w, v = np.linalg.eig(cov_matrix)
+
+    f_value = stats.f.ppf(confidence_level, p, n - p)
+    fixed_factor = np.sqrt((p * (n - 1) * f_value) / (n * (n - p)))
+    ellipse_axes = fixed_factor * np.sqrt(np.abs(w)) * v
+    ellipse_axes_len = np.linalg.norm(ellipse_axes, axis=0)
+    vol_without_pi = np.prod(ellipse_axes_len)
+    return vol_without_pi
+
+
+def _convert_co_rating_flatten_to_raw(co_rating_table_flatten):
+    """
+    Returns:
+        co_ratings_raw: numpy array of 2 features and their observations.
+            each row is a feature, each column is an observation. This is
+            compitable with numpy.linalg.cov function
+            Note: this argument is assumed to be bootstrapped with ones if
+            there is no information.
+    """
+    d = int(np.sqrt(co_rating_table_flatten.shape[0]))
+    co_rating_table = co_rating_table_flatten.reshape(d, d)
+    co_ratings_raw = np.zeros((2, int(np.sum(co_rating_table_flatten + 1))))
+    count_total = 0
+    for i, j in itertools.product(range(d), repeat=2):
+        count = co_rating_table[i, j]
+        while count > 0:
+            co_ratings_raw[:, count_total] = np.array([i + 1, j + 1])
+            count -= 1
+    return co_ratings_raw
+
+
 def simple_pearson_cor(count_table):
     """Simple Pearson correlation of 2 features (without vectorization).
 
@@ -486,11 +544,10 @@ if __name__ == '__main__':
         count_tables.append(np.array([[0, 0, 0],
                                       [0, 0, 0],
                                       [0, 0, i]]))
-
     for table in count_tables:
         print(table, ' ---> ', pearson_cor(table))
-    unittest.main()
 
-    for table in count_tables:
-        print(table, ' ---> ', pearson_cor(table))
+    x = np.array([[6, 10, 8],
+                  [9, 6, 3]])
+    print(confidence_region_vol(x, confidence_level=0.95))
     unittest.main()
