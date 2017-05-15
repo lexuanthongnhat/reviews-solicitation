@@ -1,6 +1,5 @@
 import logging
 import argparse
-import itertools
 import pickle
 from collections import OrderedDict
 import cProfile
@@ -8,10 +7,9 @@ import pstats
 from timeit import default_timer
 
 from data_model import Review
-from reviews_soli import ReviewsSolicitation, SimulationStats
+from reviews_soli import SimulationStats, SoliConfig
 from edmunds import EdmundsReview
 from edmunds_soli import EdmundsReviewSolicitation
-from uncertainty import UncertaintyBook
 
 
 logger = logging.getLogger(__name__)
@@ -40,28 +38,18 @@ def main(args):
     dataset_profile = Review.probe_dataset(product_to_reviews)
     logger.info('Number of products: {}'.format(dataset_profile.product_count))
 
-    optim_goal_to_product_result_stats = OrderedDict()
-    for optim_goal in UncertaintyBook.optimization_goals:
-        logger.debug('Optimization goal: "{}"'.format(optim_goal))
-        product_to_result_stats = simulate_reviews_soli(
-                product_to_reviews,
-                star_rank=args.star_rank,
-                dataset=args.dataset,
-                poll_count=args.poll_count,
-                question_count=args.question_count,
-                review_count_lowbound=args.review_count_lowbound,
-                criterion=optim_goal.criterion,
-                weighted=optim_goal.weighted,
-                correlated=optim_goal.correlated,
-                cor_norm_factor=optim_goal.cor_norm_factor,
-                dataset_profile=dataset_profile,
-                confidence_level=args.confidence_level,
-                duplicate=args.duplicate)
-        optim_goal_to_product_result_stats[optim_goal] = \
-            product_to_result_stats
+    product_to_config_stats = simulate_reviews_soli(
+            product_to_reviews,
+            star_rank=args.star_rank,
+            dataset=args.dataset,
+            poll_count=args.poll_count,
+            question_count=args.question_count,
+            review_count_lowbound=args.review_count_lowbound,
+            dataset_profile=dataset_profile,
+            duplicate=args.duplicate)
 
     with open(args.output, 'wb') as result_file:
-        pickle.dump(optim_goal_to_product_result_stats, result_file)
+        pickle.dump(product_to_config_stats, result_file)
 
 
 def simulate_reviews_soli(product_to_reviews,
@@ -70,10 +58,6 @@ def simulate_reviews_soli(product_to_reviews,
                           poll_count=-1,
                           question_count=1,
                           review_count_lowbound=200,
-                          criterion='expected_rating_var',
-                          weighted=False,
-                          correlated=False,
-                          cor_norm_factor=1.0,
                           dataset_profile=None,
                           **kwargs):
     """Simulate the asking process
@@ -88,18 +72,13 @@ def simulate_reviews_soli(product_to_reviews,
             Number of questions to ask a customer
         review_count_lowbound: int, default=200
             Only consider products with more than this lower bound into
-        criterion: string, default='expected_rating_var'
-            uncertainty metric
-        weighted: Boolean, default=False
-            weighted uncertainty metric using prior/global ratings
-        correlated: Boolean, default=False
-            consider a feature's uncertainty using correlated features
         dataset_profile: SimulationStats object, default=None
             dataset's profile
     Returns:
-        product_to_result_stats: dict
-            product -> sim_stats (list of SimulationStats, corresponding to
-            ReviewsSolicitation.pick_methods/answer_methods)
+        product_to_config_stats: dict
+            product -> config_to_sim_stats, in which
+            config_to_sim_stats: SoliConfig -> list of SimulationStats,
+                corresponding to SoliConfig.configs()
     """
     product_to_reviews = {key: value
                           for key, value in product_to_reviews.items()
@@ -109,101 +88,49 @@ def simulate_reviews_soli(product_to_reviews,
     review_cls, review_soli_sim_cls = dataset_to_review_and_sim_cls[dataset]
     seed_features = review_cls.dup_scenario_features if kwargs['duplicate'] \
         else review_cls.seed_features
-    product_to_result_stats = {}
+    product_to_config_stats = {}
     for product, reviews in product_to_reviews.items():
         logger.debug('feature ratings: {}'.format(
             dataset_profile.product_to_feature_ratings[product]))
-        product_to_result_stats[product] = simulate_reviews_soli_per_product(
-            reviews, review_soli_sim_cls,
-            poll_count=poll_count,
-            question_count=question_count,
-            seed_features=seed_features,
-            weighted=weighted,
-            criterion=criterion,
-            correlated=correlated,
-            cor_norm_factor=cor_norm_factor,
-            dataset_profile=dataset_profile,
-            **kwargs)
 
-    return product_to_result_stats
+        config_to_sim_stats = OrderedDict()
+        for soli_config in SoliConfig.configs():
+            reviews_soli_sim = review_soli_sim_cls(
+                    reviews, soli_config,
+                    poll_count=poll_count,
+                    question_count=question_count,
+                    seed_features=seed_features,
+                    dataset_profile=dataset_profile,
+                    **kwargs)
 
+            sim_stat = reviews_soli_sim.simulate()
+            config_to_sim_stats[soli_config] = sim_stat
+            logger.debug(sim_stat.stats_str(str(soli_config)))
+        product_to_config_stats[product] = config_to_sim_stats
 
-def simulate_reviews_soli_per_product(
-        reviews, review_soli_sim_cls,
-        poll_count=-1,
-        question_count=1,
-        seed_features=[],
-        criterion='weighted_sum_dirichlet_variances',
-        weighted=False,
-        correlated=False,
-        cor_norm_factor=1.0,
-        dataset_profile=None,
-        **kwargs):
-    """
-    Args:
-        reviews: list of Review
-        review_soli_sim_cls: ReviewSolicitation class,
-            e.g. EdmundsReviewSolicitation
-        poll_count: int, default=-1 (i.e. number of reviews of the product)
-            Number of polls (customers) to ask
-        question_count: int, default=1
-            Number of questions to ask a customer
-        review_count_lowbound: int, default=200
-            Only consider products with more than this lower bound into
-        criterion: string, default='expected_rating_var'
-            uncertainty metric
-        weighted: Boolean, default=False
-            weighted uncertainty metric using prior/global ratings
-        correlated: Boolean, default=False
-            consider a feature's uncertainty using correlated features
-        dataset_profile: SimulationStats object, default=None
-            dataset's profile
-    Returns:
-        pick_answer_to_sim_stats: dict,
-            tuple (pick_method, answer_method) -> SimulationStats
-            from ReviewsSolicitation.pick_methods/answer_methods
-    """
-    pick_answer_to_sim_stats = OrderedDict()
-    for answer_method, pick_method in itertools.product(
-            ReviewsSolicitation.answer_methods,
-            ReviewsSolicitation.pick_methods):
-        reviews_soli_sim = review_soli_sim_cls(
-                reviews,
-                poll_count=poll_count,
-                question_count=question_count,
-                seed_features=seed_features,
-                criterion=criterion,
-                weighted=weighted,
-                correlated=correlated,
-                cor_norm_factor=cor_norm_factor,
-                dataset_profile=dataset_profile,
-                **kwargs)
-        sim_stat = reviews_soli_sim.simulate(pick_method, answer_method)
-        pick_answer_to_sim_stats[(pick_method, answer_method)] = sim_stat
-        logger.debug(sim_stat.stats_str(pick_method + ' - ' + answer_method))
-
-    return pick_answer_to_sim_stats
+    return product_to_config_stats
 
 
-def summary_sim_stats(product_to_result_stats):
+def summary_product_to_config_stats(product_to_config_stats):
     """Summary simulation statistics of multiple products.
     Args:
-        product_to_result_stats: dict, product -> pick_answer_to_sim_stats
-            pick_answer_to_sim_stats is a dict returned by
-            simulate_reviews_soli_per_product
+        product_to_config_stats: dict
+            product -> config_to_sim_stats, in which
+            config_to_sim_stats: SoliConfig -> list of SimulationStats,
+                corresponding to SoliConfig.configs()
     """
-    pick_answer_to_sim_statses = OrderedDict()
-    for pick_answer_to_sim_stats in product_to_result_stats.values():
-        for pick_answer, sim_stats in pick_answer_to_sim_stats.items():
-            if pick_answer not in pick_answer_to_sim_statses:
-                pick_answer_to_sim_statses[pick_answer] = []
-            pick_answer_to_sim_statses[pick_answer].append(sim_stats)
+    # goal -> SimulationStats (poll_to_cost)
+    goal_to_statses = OrderedDict()
+    for config_to_stats in product_to_config_stats.values():
+        for config, sim_stats in config_to_stats.items():
+            if config not in goal_to_statses:
+                goal_to_statses[config] = []
+            goal_to_statses[config].append(sim_stats)
 
-    pick_answer_to_sim_stats_average = OrderedDict()
-    for pick_answer, sim_statses in pick_answer_to_sim_statses.items():
-        pick_answer_to_sim_stats_average[pick_answer] = \
-                SimulationStats.sim_stats_average(sim_statses)
-    return pick_answer_to_sim_stats_average
+    goal_to_stats_average = OrderedDict()
+    for goal, statses in goal_to_statses.items():
+        goal_to_stats_average[goal] = SimulationStats.average_statses(statses)
+    return goal_to_stats_average
 
 
 def summary_optim_goal_ratings(optim_goal_to_product_result_stats):
@@ -212,13 +139,13 @@ def summary_optim_goal_ratings(optim_goal_to_product_result_stats):
 
     Args:
         optim_goal_to_product_result_stats: dict,
-            optim_goal(UncertaintyMetric) -> product_to_result_stats (output of
+            optim_goal(UncertaintyMetric) -> product_to_config_stats (output of
             simulate_reviews_soli function)
     """
     poll_to_optim_goal_ratings = OrderedDict()
-    for optim_goal, product_to_result_stats in \
+    for optim_goal, product_to_config_stats in \
             optim_goal_to_product_result_stats.items():
-        for pick_answer_to_sim_stats in product_to_result_stats.values():
+        for pick_answer_to_sim_stats in product_to_config_stats.values():
             for pick_answer, sim_stats in pick_answer_to_sim_stats.items():
                 pass
 
@@ -258,9 +185,6 @@ if __name__ == '__main__':
             "--question-count", type=int, default=1,
             help="Number of questions to ask a customer (default=1)")
     parser.add_argument(
-            "--confidence-level", type=float, default=0.95,
-            help="Confidence level for confidence interval metric (default=1)")
-    parser.add_argument(
             "--review-count-lowbound", type=int, default=200,
             help="Only consider products with more than this lower bound into "
             " experiment (default=200)")
@@ -278,7 +202,7 @@ if __name__ == '__main__':
             help="Duplicate scenario for experimentation: 3 features, "
                  "2 are duplicate, ask 2 question per poll")
     args = parser.parse_args()
-    if args.duplicate:
+    if args.duplicate and args.question_count < 2:
         args.question_count = 2
 
     logger.setLevel(getattr(logging, args.loglevel.upper()))

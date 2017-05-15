@@ -52,7 +52,9 @@ class EdmundsReview(Review):
     seed_features = main_features
     non_rare_features = ['performanceRating', 'comfortRating',
                          'interiorRating', 'reliabilityRating', 'valueRating']
-    dup_scenario_features = ['performanceRating',
+    dup_scenario_features = ['performanceRating', 'interiorRating',
+                             # 'safetyRating', 'technologyRating',
+                             # 'reliabilityRating', 'valueRating',
                              'comfortRating', 'comfortStar']
     minor_features = [fture for ftures in features_dict.values()
                       for fture in ftures]

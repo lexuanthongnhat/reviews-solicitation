@@ -1,5 +1,6 @@
 from collections import OrderedDict, defaultdict
 from abc import ABC, abstractmethod
+import itertools
 
 import numpy as np
 
@@ -7,44 +8,80 @@ from data_model import Feature, Review
 from uncertainty import UncertaintyBook, UncertaintyReport, UncertaintyMetric
 
 
+class SoliConfig(object):
+    """Solicitation Configuation: optimization goal, picking/answering.
+
+    Attributes:
+        pick: str, func name of picking method
+        answer: str, func name of answering method
+        optm_goal: uncertainty.UncertaintyMetric
+    """
+    __configs = []
+
+    def __init__(self, pick, answer, optm_goal=None):
+        self.pick = pick
+        self.answer = answer
+        self.optm_goal = optm_goal
+
+    @classmethod
+    def configs(cls):
+        if not cls.__configs:
+            pick_mths = ['pick_highest_cost',
+                         'pick_with_prob',
+                         'pick_random',
+                         'pick_least_count']
+            answer_mths = ['answer_by_gen',
+                           'answer_in_time_order']
+
+            for pick, answer in itertools.product(pick_mths[2:], answer_mths):
+                cls.__configs.append(cls(pick, answer))
+            for pick, answer, goal in itertools.product(
+                    pick_mths[:2], answer_mths,
+                    UncertaintyMetric.optm_goals()):
+                cls.__configs.append(cls(pick, answer, optm_goal=goal))
+
+        return cls.__configs
+
+    def pick_goal_str(self):
+        config = self.pick
+        if self.optm_goal:
+            config += '_by_' + str(self.optm_goal)
+        return config
+
+    def __repr__(self):
+        return self.pick_goal_str() + '_' + self.answer
+
+    def __eq__(self, other):
+        return isinstance(other, self.__class__) \
+                and self.pick == other.pick \
+                and self.answer == other.answer \
+                and self.optm_goal == other.optm_goal
+
+    def __neq__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return hash((self.pick, self.answer, str(self.optm_goal)))
+
+
 class ReviewsSolicitation(ABC):
     """
     Attributes:
         reviews: list of data_model.Review
-        poll_count: integer, default=-1 (i.e. len(reviews))
+        soli_config: SoliConfig object
+        poll_count: int, default=-1 (i.e. len(reviews))
             how many times can ask customers
         question_count: int, default=1,
             Number of questions to ask a customer
-        seed_features: list of features name (string), if any (default: [])
-        criterion: string, default='expected_rating_var'
-            uncertainty metric
-        weighted: Boolean, default=False
-            weighted uncertainty metric using prior/global ratings
-        correlated: Boolean, default=False
-            consider a feature's uncertainty using correlated features
+        seed_features: list of features name (str), if any (default: [])
         dataset_profile: SimulationStats object, default=None
             dataset's profile
         poll_to_cost: dict
             cost change over each time of asking questions """
-    pick_methods = ['pick_highest_cost',
-                    'pick_with_prob',
-                    'pick_random',
-                    'pick_least_count']
-
-    answer_methods = ['answer_by_gen',
-                      'answer_in_time_order']
-
-    # pick_methods = ['pick_highest_cost', 'pick_least_count']
-    # answer_methods = ['answer_by_gen']
-
-    def __init__(self, reviews,
+    def __init__(self, reviews, soli_config,
                  poll_count=20,
                  question_count=1,
                  seed_features=[],
-                 criterion='expected_rating_var',
-                 weighted=False,
-                 correlated=False,
-                 cor_norm_factor=1.0,
                  dataset_profile=None,
                  **kwargs):
         if len(reviews) < 1:
@@ -53,14 +90,11 @@ class ReviewsSolicitation(ABC):
         self.reviews = reviews.copy()
         self.feature_to_star_dist = Review.sample_star_dist(reviews)
         self.star_rank = reviews[0].star_rank
+        self.soli_config = soli_config
 
         self.poll_count = poll_count if poll_count <= len(reviews)\
             and poll_count > 0 else len(reviews)
         self.question_count = question_count
-        self.criterion = criterion
-        self.weighted = weighted
-        self.correlated = correlated
-        self.cor_norm_factor = cor_norm_factor
 
         self.seed_features = seed_features
         self.features = [Feature(i, feature_name)
@@ -68,23 +102,20 @@ class ReviewsSolicitation(ABC):
         self.duplicate = True if kwargs['duplicate'] else False
         if self.duplicate:
             # 2 duplicate features' index in Review.dup_scenario_features
-            self.duplicate_feature_idx = [1, 2]
+            self.duplicate_feature_idx = [-1, -2]
 
         # Keep track feature's uncertainty
         self.uncertainty_book = UncertaintyBook(
                 self.star_rank,
                 len(self.features),
-                metric=UncertaintyMetric(criterion,
-                                         weighted=weighted,
-                                         correlated=correlated,
-                                         cor_norm_factor=cor_norm_factor),
+                optm_goal=soli_config.optm_goal,
                 dataset_profile=dataset_profile)
         self.poll_to_cost = OrderedDict()
         self.poll_to_cost[0] = self.uncertainty_book.report_uncertainty()
         self.poll_to_ratings = OrderedDict()
         self.poll_to_ratings[0] = np.copy(self.uncertainty_book.ratings)
 
-    def simulate(self, pick_method, answer_method):
+    def simulate(self):
         """Simulate the asking-aswering process."""
         for i in range(self.poll_count):
             self.uncertainty_book.refresh_uncertainty()
@@ -96,9 +127,9 @@ class ReviewsSolicitation(ABC):
             rated_features = []
             for q in range(self.question_count):
                 self.uncertainty_book.refresh_uncertainty()
-                picked_feature = self.__getattribute__(pick_method)(
+                picked_feature = self.__getattribute__(self.soli_config.pick)(
                         already_picked_idx)
-                answered_star = self.__getattribute__(answer_method)(
+                answered_star = self.__getattribute__(self.soli_config.answer)(
                         picked_feature)
 
                 # In duplicate feature scenario: make sure dup features get
@@ -115,6 +146,10 @@ class ReviewsSolicitation(ABC):
                 if answered_star:
                     self.uncertainty_book.rate_feature(picked_feature,
                                                        answered_star)
+                    self.uncertainty_book.rate_2features(
+                            picked_feature, answered_star,
+                            picked_feature, answered_star)
+
                     # Update co-rating of 2 features
                     if rated_features:
                         for pre_rated_feature, pre_star in rated_features:
@@ -137,8 +172,7 @@ class ReviewsSolicitation(ABC):
     def answer_by_gen(self, picked_feature):
         """Answer using sampling star's distribution of this product's reviews.
         Note: Always have answer
-        Args:
-            picked_feature: datamodel.Feature, returned by pick_method
+        Args: picked_feature: datamodel.Feature, returned by pick_method
         Returns:
             answered_star: int
         """
@@ -259,7 +293,7 @@ class SimulationStats(object):
         return stat_str
 
     @classmethod
-    def sim_stats_average(cls, sim_statses):
+    def average_statses(cls, sim_statses):
         """Averaging multiple product's sim stats."""
         poll_to_costs = defaultdict(list)
         poll_count = max([len(sim_stats.polls) for sim_stats in sim_statses])
@@ -271,7 +305,7 @@ class SimulationStats(object):
 
         poll_to_cost_average = OrderedDict()
         for poll, costs in poll_to_costs.items():
-            poll_to_cost_average[poll] = UncertaintyReport.reports_average(
+            poll_to_cost_average[poll] = UncertaintyReport.average_reports(
                     costs)
 
         return SimulationStats(len(poll_to_costs),

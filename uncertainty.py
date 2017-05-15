@@ -18,9 +18,13 @@ class UncertaintyMetric(object):
             infer a feature's uncertainty by other highly correlated features
         cor_norm_factor: float, default=1.0
             normalization factor for correlation
+        confid_select: aggregate function, default=np.average
+            select from list of confidence interval len or region volumn
     """
+    __metrics = []
+
     def __init__(self, criterion, weighted=False, correlated=False,
-                 cor_norm_factor=1.0, confid_select=np.average):
+                 cor_norm_factor=1.0, confid_select=None):
         self.criterion = criterion
         self.weighted = weighted
         self.correlated = correlated
@@ -30,7 +34,7 @@ class UncertaintyMetric(object):
     def __repr__(self):
         metric_str = self.criterion
         if self.criterion.find('confidence') >= 0:
-            metric_str += self.confid_select.__name__
+            metric_str += '_' + self.confid_select.__name__
         metric_str += '_weighted' if self.weighted else ''
         metric_str += '_correlated' if self.correlated else ''
         if self.correlated and self.cor_norm_factor != 1.0:
@@ -39,18 +43,48 @@ class UncertaintyMetric(object):
 
     def __eq__(self, other):
         return isinstance(other, self.__class__) \
-                and self.criterion == other.criterion \
-                and self.weighted == other.weighted \
-                and self.correlated == other.correlated \
-                and self.cor_norm_factor == other.cor_norm_factor \
-                and self.confid_select == other.confid_select
+            and self.criterion == other.criterion \
+            and self.weighted == other.weighted \
+            and self.correlated == other.correlated \
+            and self.cor_norm_factor == other.cor_norm_factor \
+            and self.confid_select == other.confid_select
 
     def __neq__(self, other):
         return not self.__eq__(other)
 
     def __hash__(self):
         return hash((self.criterion, self.weighted, self.correlated,
-                     self.cor_norm_factor, self.confid_select))
+                     self.cor_norm_factor, str(self.confid_select)))
+
+    @classmethod
+    def metrics(cls):
+        if not cls.__metrics:
+            cls.__metrics.append(cls('expected_rating_var', weighted=False,
+                                     correlated=False))
+            cls.__metrics.append(cls('expected_rating_var', weighted=False,
+                                     correlated=True))
+            cls.__metrics.append(cls('expected_rating_var', weighted=False,
+                                     correlated=True, cor_norm_factor=0.8))
+            cls.__metrics.append(cls('expected_rating_var', weighted=True,
+                                     correlated=False))
+            cls.__metrics.append(cls('expected_rating_var', weighted=True,
+                                     correlated=True))
+
+            cls.__metrics.append(cls('confidence_interval_len',
+                                     confid_select=np.average))
+            cls.__metrics.append(cls('confidence_interval_len',
+                                     confid_select=np.max))
+            cls.__metrics.append(cls('confidence_region_vol',
+                                     confid_select=np.average))
+            cls.__metrics.append(cls('confidence_region_vol',
+                                     confid_select=np.max))
+        return cls.__metrics
+
+    @classmethod
+    def optm_goals(cls):
+        return cls.metrics()[:5]
+
+    weighted_criteria = ['expected_rating_var', 'confidence_interval_len']
 
 
 class UncertaintyBook(object):
@@ -62,17 +96,12 @@ class UncertaintyBook(object):
             number of star levels
         feature_count: int,
             number of features
-        criterion: string, default='expected_rating_var'
-            uncertainty metric
-        weighted: Boolean, default=False
-            weighted uncertainty metric using prior/global ratings
-        correlated: Boolean, default=False
-            consider a feature's uncertainty using correlated features
+        optm_goal: UncertaintyMetric
         dataset_profile: SimulationStats object, default=None
             dataset's profile
         ratings: 2d numpy array, shape: (feature_count, star_rank)
             each row records ratings of a feature
-        co_ratings: 4d numpy array,
+        co_ratings: 4d numpy array, bootstraped by one for every slot.
             shape: (feature_count, feature_count, star_rank, star_rank)
             2 first indices define a matrix of 2 features co-ocurrence ratings
         independent_uncertainties: 1d np array, shape: (feature_count, )
@@ -80,30 +109,8 @@ class UncertaintyBook(object):
         uncertainties: 1d np array, shape: (feature_count, )
             feature's uncertainties after weighted, correlated
     """
-    uncertainty_metrics = [
-            UncertaintyMetric('dirichlet_var_sum', weighted=False,
-                              correlated=False),
-            UncertaintyMetric('dirichlet_var_sum', weighted=True,
-                              correlated=False),
-            UncertaintyMetric('expected_rating_var', weighted=False,
-                              correlated=False),
-            UncertaintyMetric('expected_rating_var', weighted=False,
-                              correlated=True),
-            UncertaintyMetric('expected_rating_var', weighted=False,
-                              correlated=True, cor_norm_factor=0.8),
-            UncertaintyMetric('expected_rating_var', weighted=True,
-                              correlated=False),
-            UncertaintyMetric('expected_rating_var', weighted=True,
-                              correlated=True),
-            UncertaintyMetric('confidence_interval_len'),
-            UncertaintyMetric('confidence_interval_len', confid_select=np.max),
-            UncertaintyMetric('confidence_region_vol'),
-            UncertaintyMetric('confidence_region_vol', confid_select=np.max)
-            ]
 
-    optimization_goals = uncertainty_metrics[:5]
-
-    def __init__(self, star_rank, feature_count, metric=None,
+    def __init__(self, star_rank, feature_count, optm_goal=None,
                  dataset_profile=None):
         if star_rank < 2 or feature_count < 1:
             raise ValueError('Invalid values of star_rank (>= 2) or '
@@ -111,33 +118,42 @@ class UncertaintyBook(object):
 
         self.star_rank = star_rank
         self.feature_count = feature_count
-        self.metric = metric
-
+        self.optm_goal = optm_goal
         self.dataset_profile = dataset_profile
+
         if dataset_profile:
-            self.prior_rating_count = \
-                dataset_profile.feature_rating_count_average
-            ratings_uncertainties = np.apply_along_axis(
-                globals()[metric.criterion], 1,
-                np.array(dataset_profile.feature_ratings))
-            self.prior_uncertainty = np.average(ratings_uncertainties)
-            self.prior_uncertainty_total = self.prior_rating_count * \
-                self.prior_uncertainty
+            self._init_prior(dataset_profile)
 
         self.independent_uncertainties = np.zeros(feature_count)
         self.uncertainties = np.zeros(feature_count)
+        self.criterion_to_cache_unc = {}
 
         self.ratings = np.zeros((feature_count, star_rank))
-        self.co_ratings = np.zeros((feature_count, feature_count,
-                                    star_rank, star_rank))
+        self.co_ratings = np.ones((feature_count, feature_count,
+                                   star_rank, star_rank))
+
+    def _init_prior(self, dataset_profile):
+        self.prior = {}
+        for criterion in UncertaintyMetric.weighted_criteria:
+            prior_rating_count = dataset_profile.feature_rating_count_average
+            ratings_uncertainties = np.apply_along_axis(
+                globals()[criterion], 1,
+                np.array(dataset_profile.feature_ratings))
+            prior_uncertainty = np.average(ratings_uncertainties)
+            prior_uncertainty_total = prior_rating_count * prior_uncertainty
+            self.prior[criterion] = {'count': prior_rating_count,
+                                     'uncertainty': prior_uncertainty_total}
 
     def refresh_uncertainty(self):
         """Refresh (independent) uncertainties to reflect latest ratings.
 
         Calculate based on self.criterion, self.weighted, self.correlated
         """
-        self.independent_uncertainties, self.uncertainties = \
-            self.compute_uncertainty(self.metric)
+        self.criterion_to_cache_unc = {}
+
+        if self.optm_goal:
+            self.independent_uncertainties, self.uncertainties = \
+                self.compute_uncertainty(self.optm_goal)
 
     def compute_uncertainty(self, metric):
         """Compute uncertainty using different criteria.
@@ -152,22 +168,29 @@ class UncertaintyBook(object):
         Returns:
             (indept_uncertainties, cor_uncertainties)
         """
-        if metric.criterion == 'confidence_region_vol' \
-                and metric.confid_select:
-            confid_region_vols = np.apply_along_axis(
-                globals()[metric.criterion], 2,
-                self.co_ratings.reshape(self.feature_count, self.feature_count,
-                                        self.star_rank * self.star_rank))
-            cor_uncertainties = metric.confid_select(confid_region_vols)
+        criterion = metric.criterion
+        if criterion == 'confidence_region_vol':
+            if criterion not in self.criterion_to_cache_unc:
+                self.criterion_to_cache_unc[criterion] = np.apply_along_axis(
+                    globals()[criterion], 2, self.co_ratings.reshape(
+                        self.feature_count, self.feature_count,
+                        self.star_rank * self.star_rank))
+            confid_region_vols = self.criterion_to_cache_unc[criterion]
+            cor_uncertainties = metric.confid_select(confid_region_vols,
+                                                     axis=1)
             return (cor_uncertainties, cor_uncertainties)
 
-        indept_uncertainties = np.apply_along_axis(
-            globals()[metric.criterion], 1, self.ratings)
+        if criterion not in self.criterion_to_cache_unc:
+            self.criterion_to_cache_unc[criterion] = np.apply_along_axis(
+                globals()[criterion], 1, self.ratings)
+        indept_uncertainties = np.copy(self.criterion_to_cache_unc[criterion])
+
         if metric.weighted:
             rating_counts = np.sum(self.ratings, axis=1)
-            indept_uncertainties = (indept_uncertainties * rating_counts
-                                    + self.prior_uncertainty_total) / (
-                                    rating_counts + self.prior_rating_count)
+            indept_uncertainties = (
+                indept_uncertainties * rating_counts
+                + self.prior[criterion]['uncertainty']) / (
+                rating_counts + self.prior[criterion]['count'])
 
         if not metric.correlated:
             cor_uncertainties = np.copy(indept_uncertainties)
@@ -186,7 +209,7 @@ class UncertaintyBook(object):
 
     def report_uncertainty(self):
         report = UncertaintyReport()
-        for metric in self.uncertainty_metrics:
+        for metric in UncertaintyMetric.metrics():
             report.add_uncertainty(metric, self.uncertainty_total(metric))
 
         return report
@@ -200,7 +223,7 @@ class UncertaintyBook(object):
             sum of all features' uncertainties, float
         """
         _, cor_uncertainties = self.compute_uncertainty(metric)
-        if metric.criterion == 'confidence_region_vol':
+        if metric.confid_select:
             return metric.confid_select(cor_uncertainties)
         return cor_uncertainties.sum()
 
@@ -226,7 +249,9 @@ class UncertaintyBook(object):
             raise IndexError('Wrong star rating (>=1 and <={})'.format(
                 self.star_rank))
         self.co_ratings[feature1.idx, feature2.idx, star1 - 1, star2 - 1] += 1
-        self.co_ratings[feature2.idx, feature1.idx, star2 - 1, star1 - 1] += 1
+        if feature1.idx != feature2.idx:
+            self.co_ratings[feature2.idx, feature1.idx,
+                            star2 - 1, star1 - 1] += 1
 
 
 class UncertaintyReport(object):
@@ -251,7 +276,7 @@ class UncertaintyReport(object):
         return self.uncertainty_totals[metric]
 
     @classmethod
-    def reports_average(cls, uncertainty_reports):
+    def average_reports(cls, uncertainty_reports):
         if not uncertainty_reports or len(uncertainty_reports) < 1:
             raise ValueError('Empty uncertainty_reports')
         uncertainty_average = OrderedDict()
@@ -321,7 +346,7 @@ def pearson_cor(count_table):
         a real number
     """
     d = count_table.shape[0]    # number of star levels
-    param_table = count_table + 1
+    param_table = count_table
 
     fat_dirich_params = param_table.flatten()
     fat_covs = np.array(dirich_cov(fat_dirich_params))    # dim: d^2 * d^2
@@ -380,7 +405,7 @@ def confidence_region_vol(co_rating_samples_flatten, confidence_level=0.95):
             it has no role in relative comparison between features
     """
     co_ratings_raw = _convert_co_rating_flatten_to_raw(
-            co_rating_samples_flatten)
+        co_rating_samples_flatten)
     p = 2
     n = co_ratings_raw.shape[1]
     cov_matrix = np.cov(co_ratings_raw)
@@ -405,13 +430,14 @@ def _convert_co_rating_flatten_to_raw(co_rating_table_flatten):
     """
     d = int(np.sqrt(co_rating_table_flatten.shape[0]))
     co_rating_table = co_rating_table_flatten.reshape(d, d)
-    co_ratings_raw = np.zeros((2, int(np.sum(co_rating_table_flatten + 1))))
+    co_ratings_raw = np.zeros((2, int(np.sum(co_rating_table_flatten))))
     count_total = 0
     for i, j in itertools.product(range(d), repeat=2):
-        count = co_rating_table[i, j]
-        while count > 0:
-            co_ratings_raw[:, count_total] = np.array([i + 1, j + 1])
-            count -= 1
+        count = int(co_rating_table[i, j])
+        if count > 0:
+            co_ratings_raw[:, count_total:count_total + count] = np.tile(
+                np.array([[i + 1], [j + 1]]), count)
+            count_total += count
     return co_ratings_raw
 
 
