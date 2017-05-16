@@ -199,6 +199,10 @@ class UncertaintyBook(object):
                 pearson_cor_on_flatten, 2,
                 self.co_ratings.reshape(self.feature_count, self.feature_count,
                                         self.star_rank * self.star_rank))
+            # Avoid divided by zero
+            if np.min(np.abs(correlations)) == 0.0:
+                correlations = np.abs(correlations) + 0.00001
+
             if metric.cor_norm_factor != 1.0:
                 correlations = correlations / metric.cor_norm_factor
             np.fill_diagonal(correlations, 1)

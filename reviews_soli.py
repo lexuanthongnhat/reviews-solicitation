@@ -63,6 +63,9 @@ class SoliConfig(object):
     def __hash__(self):
         return hash((self.pick, self.answer, str(self.optm_goal)))
 
+    def is_gen_answer(self):
+        return self.answer.endswith('_gen')
+
 
 class ReviewsSolicitation(ABC):
     """
@@ -242,9 +245,9 @@ class ReviewsSolicitation(ABC):
         """
         rating_counts = self.uncertainty_book.get_rating_count()
         if already_picked_idx:
-            rating_counts[already_picked_idx] = -float('inf')
-        max_idx = np.argmax(rating_counts)
-        return self.features[max_idx]
+            rating_counts[already_picked_idx] = float('inf')
+        min_idx = np.argmin(rating_counts)
+        return self.features[min_idx]
 
 
 class SimulationStats(object):
@@ -255,12 +258,12 @@ class SimulationStats(object):
         poll_to_cost (dict): poll (int) -> UncertaintyReport
         polls: list of polls
         uncertainty_reports: list of uncertainty.UncertaintyReport
-        final_features (list): list of data_model.Feature
+        features (list): list of data_model.Feature
         final_ratings: 2d np array, from UncertaintyBook.ratings
     """
     def __init__(self, poll_count, question_count,
                  poll_to_cost, poll_to_ratings,
-                 final_features, final_ratings):
+                 features, final_ratings):
         self.poll_count = poll_count
         self.question_count = question_count
         self.poll_to_cost = poll_to_cost
@@ -268,9 +271,9 @@ class SimulationStats(object):
         self.uncertainty_reports = list(self.poll_to_cost.values())
 
         self.poll_to_ratings = poll_to_ratings
-        self.final_features = final_features
+        self.features = features
         self.no_answer_count = sum([feature.no_answer_count
-                                    for feature in self.final_features])
+                                    for feature in self.features])
         self.final_ratings = final_ratings
 
     def stats_str(self, message='', detail=False):
@@ -285,8 +288,8 @@ class SimulationStats(object):
             stat_str += 'Final cost after {} polls:\n{}\n'.format(
                 last_poll, self.poll_to_cost[last_poll])
 
-        stat_str += 'final_features: '
-        for feature in self.final_features:
+        stat_str += 'features: '
+        for feature in self.features:
             stat_str += '{}={}   '.format(feature.name,
                                           self.final_ratings[feature.idx])
         stat_str += '/no_answer_count={}'.format(self.no_answer_count)
@@ -308,8 +311,20 @@ class SimulationStats(object):
             poll_to_cost_average[poll] = UncertaintyReport.average_reports(
                     costs)
 
+        # Averaging rating
+        poll_to_ratings_average = OrderedDict()
+        for sim_stats in sim_statses:
+            for poll, ratings in sim_stats.poll_to_ratings.items():
+                if poll not in poll_to_ratings_average:
+                    poll_to_ratings_average[poll] = np.copy(ratings)
+                else:
+                    poll_to_ratings_average[poll] += np.copy(ratings)
+
+        for ratings_average in poll_to_ratings_average.values():
+            ratings_average = ratings_average / len(sim_statses)
+
         return SimulationStats(len(poll_to_costs),
                                sim_statses[0].question_count,
                                poll_to_cost_average,
-                               {}, [],
-                               None)
+                               poll_to_ratings_average,
+                               sim_statses[0].features, None)
