@@ -47,10 +47,11 @@ class Review(ABC):
         """
 
     @classmethod
-    def sample_star_dist(cls, reviews):
+    def sample_star_dist(cls, reviews, features):
         """Sampling a set of reviews for the distribution of stars.
         Args:
             reviews: list of Review
+            features: list of Feature
         Returns:
             feature_to_star_dist: dict: feature's name -> np.array of
                 star's distribution
@@ -66,6 +67,12 @@ class Review(ABC):
 
         feature_to_star_dist = {feature: stars / np.sum(stars)
                                 for feature, stars in feature_to_stars.items()}
+
+        # Uniform dist for unknown features
+        for feature in features:
+            if feature.name not in feature_to_star_dist:
+                feature_to_star_dist[feature.name] = \
+                        np.ones(star_rank) / star_rank
         return feature_to_star_dist
 
     @classmethod

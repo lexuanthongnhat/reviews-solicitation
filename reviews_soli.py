@@ -91,7 +91,6 @@ class ReviewsSolicitation(ABC):
             raise ValueError('Empty or None reviews')
         self.original_reviews = reviews
         self.reviews = reviews.copy()
-        self.feature_to_star_dist = Review.sample_star_dist(reviews)
         self.star_rank = reviews[0].star_rank
         self.soli_config = soli_config
 
@@ -102,6 +101,8 @@ class ReviewsSolicitation(ABC):
         self.seed_features = seed_features
         self.features = [Feature(i, feature_name)
                          for i, feature_name in enumerate(self.seed_features)]
+        self.feature_to_star_dist = Review.sample_star_dist(reviews,
+                                                            self.features)
         self.duplicate = True if kwargs['duplicate'] else False
         if self.duplicate:
             # 2 duplicate features' index in Review.dup_scenario_features
