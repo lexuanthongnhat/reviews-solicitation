@@ -216,6 +216,6 @@ if __name__ == '__main__':
     else:
         start_time = default_timer()
         main(args)
-        end_time = default_timer()
-        logger.info("Simulation finished in {} seconds".format(
-                end_time - start_time))
+        elapsed_time = default_timer()- start_time
+        logger.info("Simulation finished in {:.2f} seconds or ({:.2f} "
+                    "minutes)".format(elapsed_time, elapsed_time / 60))
