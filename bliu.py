@@ -14,6 +14,9 @@ ch = logging.StreamHandler()
 ch.setFormatter(logging.Formatter('%(asctime)s-%(levelname)s - %(message)s'))
 logger.addHandler(ch)
 
+RATING_COUNT_MIN = 10
+ASPECT_COUNT_MIN = 3
+
 
 class BliuReview(Review):
 
@@ -22,19 +25,38 @@ class BliuReview(Review):
 
     @classmethod
     def import_dataset(cls, path, star_rank=6, duplicate=False):
-        """Import Edmund dataset from csv file
+        """Import Bliu dataset from a directory
 
         Args:
             path: string
             star_rank: int, e.g. 5 means 1, 2, 3, 4 and 5 stars system
             duplicate: bool, default=False, duplicate experiment scenario
         Returns:
-            car_to_reviews: dict of car -> list of time-sorted EdmundsReview
+            product_to_reviews: dict,
+                product -> list of time-sorted EdmundsReview
         """
-        RATING_COUNT_MIN = 10
-        ASPECT_COUNT_MIN = 3
-
         product_to_reviews = defaultdict(list)
+        product_to_aspect_sentiments = cls.import_dataset_with_aspects(path)
+        for product, aspect_to_sentiment_count \
+                in product_to_aspect_sentiments.items():
+            product_to_reviews[product] = cls.create_mock_reviews(
+                    aspect_to_sentiment_count, star_rank=6)
+
+        return product_to_reviews
+
+    
+    @classmethod
+    def import_dataset_with_aspects(cls, path, star_rank=6, duplicate=False):
+        """Import Bliu dataset from a directory
+
+        Args:
+            path: string
+            star_rank: int, e.g. 5 means 1, 2, 3, 4 and 5 stars system
+            duplicate: bool, default=False, duplicate experiment scenario
+        Returns:
+            
+        """
+        product_to_aspect_sentiments = defaultdict(list)
         filepaths = []
         for dirpath, dirnames, filenames in os.walk(path):
             for filename in filenames:
@@ -46,28 +68,21 @@ class BliuReview(Review):
             product, anno_reviews = import_bliu_dataset(filepath)
             aspect_to_sentiment_count = AnnoReview.aggregate_aspects(
                     anno_reviews)
-
-            aspect_to_sentiment_count = _filter_rare_aspects(
-                    aspect_to_sentiment_count, RATING_COUNT_MIN)
-            aspect_to_sentiment_count = _map_sentiment(
+            aspect_to_sentiment_count = _clean_dataset(
                     aspect_to_sentiment_count)
-
-            # bootstrap
-            for sentiment_count in aspect_to_sentiment_count.values():
-                for sentiment in sentiment_count.keys():
-                    sentiment_count[sentiment] += 1
 
             if len(aspect_to_sentiment_count) >= ASPECT_COUNT_MIN:
                 logger.debug(product)
-                product_to_reviews[product] = cls.create_mock_reviews(
-                        aspect_to_sentiment_count, star_rank=star_rank)
+                product_to_aspect_sentiments[product] = \
+                    aspect_to_sentiment_count
             else:
                 logger.debug("Product with less than {} aspects: {}".format(
                     ASPECT_COUNT_MIN, product))
 
         logger.debug("{} products with aspects of at least {} ratings".format(
-            len(product_to_reviews), RATING_COUNT_MIN))
-        return product_to_reviews
+            len(product_to_aspect_sentiments), RATING_COUNT_MIN))
+        return product_to_aspect_sentiments
+
 
     @classmethod
     def create_mock_reviews(cls, aspect_to_sentiment_count, star_rank=6):
@@ -86,6 +101,26 @@ class BliuReviewSolicitation(EdmundsReviewSolicitation):
     """
     def answer_in_time_order(self, picked_feature):
         raise NotImplementedError("Bliu reviews don't support this method!")
+
+
+def _clean_dataset(aspect_to_sentiment_count):
+    """Clean dataset.
+    
+    Cleaning:
+        1. filter aspects that has less than RATING_COUNT_MIN
+        2. map sentiment (-3, -2, -1, 1, 2, 3) to star (1, 2, 3, 4, 5, 6)
+        3. bootstrap by adding 1 for every star
+    """
+    aspect_to_sentiment_count_cleaned = _filter_rare_aspects(
+            aspect_to_sentiment_count, RATING_COUNT_MIN)
+    aspect_to_sentiment_count_cleaned = _map_sentiment(
+            aspect_to_sentiment_count_cleaned)
+    # bootstrap by adding 1 for every sentiment
+    for sentiment_count in aspect_to_sentiment_count_cleaned.values():
+        for sentiment in sentiment_count.keys():
+            sentiment_count[sentiment] += 1
+
+    return aspect_to_sentiment_count_cleaned
 
 
 def _filter_rare_aspects(aspect_to_sentiment_count, rating_count_min):
