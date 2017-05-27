@@ -8,48 +8,21 @@ from timeit import default_timer
 
 from data_model import Review
 from reviews_soli import SimulationStats, SoliConfig
-from edmunds import EdmundsReview
-from edmunds_soli import EdmundsReviewSolicitation
+from edmunds import EdmundsReview, EdmundsReviewSolicitation
+from bliu import BliuReview, BliuReviewSolicitation
 
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARN)
 ch = logging.StreamHandler()
-ch.setFormatter(logging.Formatter(
-    '%(asctime)s-%(name)s-%(levelname)s - %(message)s'))
+ch.setFormatter(logging.Formatter('%(asctime)s-%(levelname)s - %(message)s'))
 logger.addHandler(ch)
 
 
 dataset_to_review_and_sim_cls = {
-    'edmunds': (EdmundsReview, EdmundsReviewSolicitation)
+    'edmunds': (5, EdmundsReview, EdmundsReviewSolicitation),
+    'bliu': (6, BliuReview, BliuReviewSolicitation)
 }
-
-
-def main(args):
-    """
-    Attributes:
-        args: Namespace object, return by ArgumentParser.parse_args()
-    """
-    review_cls, _ = dataset_to_review_and_sim_cls[args.dataset]
-    product_to_reviews = review_cls.import_csv(args.input,
-                                               star_rank=args.star_rank,
-                                               duplicate=args.duplicate)
-
-    dataset_profile = Review.probe_dataset(product_to_reviews)
-    logger.info('Number of products: {}'.format(dataset_profile.product_count))
-
-    product_to_config_stats = simulate_reviews_soli(
-            product_to_reviews,
-            star_rank=args.star_rank,
-            dataset=args.dataset,
-            poll_count=args.poll_count,
-            question_count=args.question_count,
-            review_count_lowbound=args.review_count_lowbound,
-            dataset_profile=dataset_profile,
-            duplicate=args.duplicate)
-
-    with open(args.output, 'wb') as result_file:
-        pickle.dump(product_to_config_stats, result_file)
 
 
 def simulate_reviews_soli(product_to_reviews,
@@ -85,16 +58,19 @@ def simulate_reviews_soli(product_to_reviews,
                           if len(value) >= review_count_lowbound}
     logger.info('# products simulated: {}'.format(len(product_to_reviews)))
 
-    review_cls, review_soli_sim_cls = dataset_to_review_and_sim_cls[dataset]
+    _, review_cls, review_soli_sim_cls = dataset_to_review_and_sim_cls[dataset]
     seed_features = review_cls.dup_scenario_features if kwargs['duplicate'] \
         else review_cls.seed_features
     product_to_config_stats = {}
     for product, reviews in product_to_reviews.items():
-        logger.debug('feature ratings: {}'.format(
-            dataset_profile.product_to_feature_ratings[product]))
+        logger.debug("Running over '{}'".format(product))
+        # different aspects set for each product
+        if dataset == 'bliu':
+            seed_features = set([feature for review in reviews
+                                 for feature in review.features])
 
         config_to_sim_stats = OrderedDict()
-        for soli_config in SoliConfig.configs():
+        for soli_config in SoliConfig.configs(dataset):
             reviews_soli_sim = review_soli_sim_cls(
                     reviews, soli_config,
                     poll_count=poll_count,
@@ -111,13 +87,16 @@ def simulate_reviews_soli(product_to_reviews,
     return product_to_config_stats
 
 
-def summary_product_to_config_stats(product_to_config_stats):
+def summary_product_to_config_stats(product_to_config_stats,
+                                    ignore_rating=False):
     """Summary simulation statistics of multiple products.
     Args:
         product_to_config_stats: dict
             product -> config_to_sim_stats, in which
             config_to_sim_stats: SoliConfig -> list of SimulationStats,
                 corresponding to SoliConfig.configs()
+        ignore_rating: bool, default=False
+            do not average ratings of multiple products
     """
     # goal -> SimulationStats (poll_to_cost)
     goal_to_statses = OrderedDict()
@@ -129,7 +108,8 @@ def summary_product_to_config_stats(product_to_config_stats):
 
     goal_to_stats_average = OrderedDict()
     for goal, statses in goal_to_statses.items():
-        goal_to_stats_average[goal] = SimulationStats.average_statses(statses)
+        goal_to_stats_average[goal] = SimulationStats.average_statses(
+                statses, ignore_rating=ignore_rating)
     return goal_to_stats_average
 
 
@@ -161,19 +141,43 @@ def probe_dataset(file_path, star_rank=5, dataset='edmunds'):
     Returns:
         dataset_profile: data_model.DatasetProfile object
     """
-    review_cls, _ = dataset_to_review_and_sim_cls[dataset]
-
-    product_to_reviews = review_cls.import_csv(file_path, star_rank=star_rank)
+    _, review_cls, _ = dataset_to_review_and_sim_cls[dataset]
+    product_to_reviews = review_cls.import_dataset(file_path,
+                                                   star_rank=star_rank)
     dataset_profile = Review.probe_dataset(product_to_reviews)
     return dataset_profile
+
+
+def start_sim(args):
+    """
+    Attributes:
+        args: Namespace object, return by ArgumentParser.parse_args()
+    """
+    star_rank, review_cls, _ = dataset_to_review_and_sim_cls[args.dataset]
+    product_to_reviews = review_cls.import_dataset(args.input,
+                                                   star_rank=star_rank,
+                                                   duplicate=args.duplicate)
+
+    dataset_profile = Review.probe_dataset(product_to_reviews)
+    logger.info('Number of products: {}'.format(dataset_profile.product_count))
+
+    product_to_config_stats = simulate_reviews_soli(
+            product_to_reviews,
+            star_rank=star_rank,
+            dataset=args.dataset,
+            poll_count=args.poll_count,
+            question_count=args.question_count,
+            review_count_lowbound=args.review_count_lowbound,
+            dataset_profile=dataset_profile,
+            duplicate=args.duplicate)
+
+    with open(args.output, 'wb') as result_file:
+        pickle.dump(product_to_config_stats, result_file)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Reviews Solicitation")
     parser.add_argument("--input", help="dataset input path")
-    parser.add_argument(
-            "--star-rank", type=int, default=5,
-            help="Number of different star levels (default=5)")
     parser.add_argument(
             "--dataset", default="edmunds",
             help="Dataset name (default='edmunds')")
@@ -210,12 +214,12 @@ if __name__ == '__main__':
 
     if args.profile:
         profile = cProfile.Profile()
-        profile.runcall(main, args)
+        profile.runcall(start_sim, args)
         stats = pstats.Stats(profile).sort_stats('cumulative')
         stats.print_stats()
     else:
         start_time = default_timer()
-        main(args)
-        elapsed_time = default_timer()- start_time
+        start_sim(args)
+        elapsed_time = default_timer() - start_time
         logger.info("Simulation finished in {:.2f} seconds or ({:.2f} "
                     "minutes)".format(elapsed_time, elapsed_time / 60))

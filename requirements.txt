@@ -11,6 +11,8 @@ flake8 >= 3.0.4
     configparser; python_version<"3.2"
     enum34; python_version<"3.4"
 
+lxml >= 3.5.0
+
 # Jupyter notebook
 jupyter >= 1.0.0
 jupyter-contrib-nbextensions >= 0.2.4

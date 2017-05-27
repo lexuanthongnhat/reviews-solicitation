@@ -1,6 +1,7 @@
 from collections import OrderedDict, defaultdict
 from abc import ABC, abstractmethod
 import itertools
+import warnings
 
 import numpy as np
 
@@ -16,7 +17,7 @@ class SoliConfig(object):
         answer: str, func name of answering method
         optm_goal: uncertainty.UncertaintyMetric
     """
-    __configs = []
+    __dataset_to_configs = {}
 
     def __init__(self, pick, answer, optm_goal=None):
         self.pick = pick
@@ -24,23 +25,27 @@ class SoliConfig(object):
         self.optm_goal = optm_goal
 
     @classmethod
-    def configs(cls):
-        if not cls.__configs:
+    def configs(cls, dataset="edmunds"):
+        if dataset not in cls.__dataset_to_configs:
+            __configs = []
             pick_mths = ['pick_highest_cost',
                          'pick_with_prob',
                          'pick_random',
                          'pick_least_count']
-            answer_mths = ['answer_by_gen',
-                           'answer_in_time_order']
+            answer_mths = ['answer_by_gen']
+            if dataset == "edmunds":
+                answer_mths.append('answer_in_time_order')
 
             for pick, answer in itertools.product(pick_mths[2:], answer_mths):
-                cls.__configs.append(cls(pick, answer))
+                __configs.append(cls(pick, answer))
             for pick, answer, goal in itertools.product(
                     pick_mths[:2], answer_mths,
                     UncertaintyMetric.optm_goals()):
-                cls.__configs.append(cls(pick, answer, optm_goal=goal))
+                __configs.append(cls(pick, answer, optm_goal=goal))
 
-        return cls.__configs
+            cls.__dataset_to_configs[dataset] = __configs
+
+        return cls.__dataset_to_configs[dataset]
 
     def pick_goal_str(self):
         config = self.pick
@@ -216,8 +221,13 @@ class ReviewsSolicitation(ABC):
         Returns:
             datamodel.Feature
         """
-        weights = self.uncertainty_book.uncertainties / \
-            np.sum(self.uncertainty_book.uncertainties)
+        warnings.filterwarnings("error")
+        try:
+            weights = self.uncertainty_book.uncertainties / \
+                np.sum(self.uncertainty_book.uncertainties)
+        except RuntimeWarning:
+            import pdb
+            pdb.set_trace()
         while True:
             picked_feature = np.random.choice(self.features, p=weights)
             if picked_feature.idx not in already_picked_idx:
@@ -289,15 +299,11 @@ class SimulationStats(object):
             stat_str += 'Final cost after {} polls:\n{}\n'.format(
                 last_poll, self.poll_to_cost[last_poll])
 
-        stat_str += 'features: '
-        for feature in self.features:
-            stat_str += '{}={}   '.format(feature.name,
-                                          self.final_ratings[feature.idx])
         stat_str += '/no_answer_count={}'.format(self.no_answer_count)
         return stat_str
 
     @classmethod
-    def average_statses(cls, sim_statses):
+    def average_statses(cls, sim_statses, ignore_rating=False):
         """Averaging multiple product's sim stats."""
         poll_to_costs = defaultdict(list)
         poll_count = max([len(sim_stats.polls) for sim_stats in sim_statses])
@@ -314,15 +320,16 @@ class SimulationStats(object):
 
         # Averaging rating
         poll_to_ratings_average = OrderedDict()
-        for sim_stats in sim_statses:
-            for poll, ratings in sim_stats.poll_to_ratings.items():
-                if poll not in poll_to_ratings_average:
-                    poll_to_ratings_average[poll] = np.copy(ratings)
-                else:
-                    poll_to_ratings_average[poll] += np.copy(ratings)
+        if not ignore_rating:
+            for sim_stats in sim_statses:
+                for poll, ratings in sim_stats.poll_to_ratings.items():
+                    if poll not in poll_to_ratings_average:
+                        poll_to_ratings_average[poll] = np.copy(ratings)
+                    else:
+                        poll_to_ratings_average[poll] += np.copy(ratings)
 
-        for ratings_average in poll_to_ratings_average.values():
-            ratings_average = ratings_average / len(sim_statses)
+            for ratings_average in poll_to_ratings_average.values():
+                ratings_average = ratings_average / len(sim_statses)
 
         return SimulationStats(len(poll_to_costs),
                                sim_statses[0].question_count,

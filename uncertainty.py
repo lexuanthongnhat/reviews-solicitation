@@ -63,8 +63,6 @@ class UncertaintyMetric(object):
                                      correlated=False))
             cls.__metrics.append(cls('expected_rating_var', weighted=False,
                                      correlated=True))
-            cls.__metrics.append(cls('expected_rating_var', weighted=False,
-                                     correlated=True, cor_norm_factor=0.8))
             cls.__metrics.append(cls('expected_rating_var', weighted=True,
                                      correlated=False))
             cls.__metrics.append(cls('expected_rating_var', weighted=True,
@@ -82,7 +80,7 @@ class UncertaintyMetric(object):
 
     @classmethod
     def optm_goals(cls):
-        return cls.metrics()[:5]
+        return cls.metrics()[:4]
 
     weighted_criteria = ['expected_rating_var', 'confidence_interval_len']
 

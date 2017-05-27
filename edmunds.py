@@ -2,31 +2,10 @@ import csv
 from collections import defaultdict
 from dateutil.parser import parse
 
+import numpy as np
+
 from data_model import Review
-
-
-"""
-Edmunds dataset comes with following fields
-    id, make, model, year, styleId, author, title,
-    reviewText, favoriteFeatures, suggestedImprovements, userRating,
-    comfortRating:
-        frontSeats, rearSeats, gettingInOut, noiseAndVibration, rideComfort
-    interiorRating:
-        cargoStorage, instrumentation, interiorDesign, logicOfControls,
-        qualityOfMaterials
-    performanceRating:
-        acceleration, braking, roadHolding, shifting, steering
-    reliabilityRating:
-        repairFrequency, dealershipSupport, engine, transmission, electronics
-    safetyRating:
-        headlights, outwardVisibility, parkingAids, rainSnowTraction,
-        activeSafety
-    technologyRating:
-        entertainment, navigation, bluetooth, usbPorts, climateControl
-    valueRating:
-        fuelEconomy, maintenanceCost, purchaseCost, resaleValue, warranty
-    created, updated
-"""
+from reviews_soli import ReviewsSolicitation
 
 
 class EdmundsReview(Review):
@@ -61,11 +40,11 @@ class EdmundsReview(Review):
     overall_rating = 'userRating'
 
     @classmethod
-    def import_csv(cls, file_path, star_rank=5, duplicate=False):
+    def import_dataset(cls, path, star_rank=5, duplicate=False):
         """Import Edmund dataset from csv file
 
         Args:
-            file_path: string
+            path: string
             star_rank: int, e.g. 5 means 1, 2, 3, 4 and 5 stars system
             duplicate: bool, default=False, duplicate experiment scenario
         Returns:
@@ -73,7 +52,7 @@ class EdmundsReview(Review):
         """
         car_to_reviews = defaultdict(list)
         car_to_rows = defaultdict(list)
-        with open(file_path) as csvfile:
+        with open(path) as csvfile:
             csv_reader = csv.DictReader(csvfile)
             for row in csv_reader:
                 # Filter out rows with erroneous rating
@@ -122,6 +101,43 @@ class EdmundsReview(Review):
                                                     review.star_rank))
 
         return car_to_reviews_trim
+
+
+class EdmundsReviewSolicitation(ReviewsSolicitation):
+    """Edmunds reviews have a fixed set of features that make the
+    simulation much simpler.
+    """
+
+    def answer_by_gen(self, picked_feature):
+        """Answer using sampling star's distribution of this product's reviews.
+        Note: Always have answer
+        Args:
+            picked_feature: datamodel.Feature, returned by pick_method
+        Returns:
+            answered_star: int
+        """
+        star_dist = self.feature_to_star_dist[picked_feature.name]
+        stars = np.arange(1, self.star_rank + 1, 1)
+        answered_star = np.random.choice(stars, p=star_dist)
+        return answered_star
+
+    def answer_in_time_order(self, picked_feature):
+        """Answer using real reviews sorted in time order.
+        Args:
+            picked_feature: datamodel.Feature, returned by pick_method
+        Returns:
+            answered_star: int
+        """
+        answered_review = self.reviews[0]   # earliest review
+        answered_star = None
+        if picked_feature.name in answered_review.feature_to_star.keys():
+            answered_star = answered_review.feature_to_star[
+                picked_feature.name]
+        self.num_waiting_answers -= 1
+
+        if self.num_waiting_answers <= 0:
+            self.reviews.pop(0)
+        return answered_star
 
 
 class Car(object):
