@@ -88,6 +88,7 @@ def simulate_reviews_soli(product_to_reviews,
 
 
 def summary_product_to_config_stats(product_to_config_stats,
+                                    plotted_poll_end=100,
                                     ignore_rating=False):
     """Summary simulation statistics of multiple products.
     Args:
@@ -109,7 +110,8 @@ def summary_product_to_config_stats(product_to_config_stats,
     goal_to_stats_average = OrderedDict()
     for goal, statses in goal_to_statses.items():
         goal_to_stats_average[goal] = SimulationStats.average_statses(
-                statses, ignore_rating=ignore_rating)
+                statses, plotted_poll_end=plotted_poll_end,
+                ignore_rating=ignore_rating)
     return goal_to_stats_average
 
 

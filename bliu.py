@@ -44,7 +44,6 @@ class BliuReview(Review):
 
         return product_to_reviews
 
-    
     @classmethod
     def import_dataset_with_aspects(cls, path, star_rank=6, duplicate=False):
         """Import Bliu dataset from a directory
@@ -54,7 +53,7 @@ class BliuReview(Review):
             star_rank: int, e.g. 5 means 1, 2, 3, 4 and 5 stars system
             duplicate: bool, default=False, duplicate experiment scenario
         Returns:
-            
+
         """
         product_to_aspect_sentiments = defaultdict(list)
         filepaths = []
@@ -83,7 +82,6 @@ class BliuReview(Review):
             len(product_to_aspect_sentiments), RATING_COUNT_MIN))
         return product_to_aspect_sentiments
 
-
     @classmethod
     def create_mock_reviews(cls, aspect_to_sentiment_count, star_rank=6):
         reviews = []
@@ -105,7 +103,7 @@ class BliuReviewSolicitation(EdmundsReviewSolicitation):
 
 def _clean_dataset(aspect_to_sentiment_count):
     """Clean dataset.
-    
+
     Cleaning:
         1. filter aspects that has less than RATING_COUNT_MIN
         2. map sentiment (-3, -2, -1, 1, 2, 3) to star (1, 2, 3, 4, 5, 6)

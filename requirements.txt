@@ -16,6 +16,7 @@ lxml >= 3.5.0
 # Jupyter notebook
 jupyter >= 1.0.0
 jupyter-contrib-nbextensions >= 0.2.4
+ipdb >= 0.10.0
 # Enable nbextensions:
 #   jupyter contrib nbextension install --user
 #   jupyter nbextensions_configurator enable --user

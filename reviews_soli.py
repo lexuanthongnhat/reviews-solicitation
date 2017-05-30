@@ -82,10 +82,11 @@ class ReviewsSolicitation(ABC):
         question_count: int, default=1,
             Number of questions to ask a customer
         seed_features: list of features name (str), if any (default: [])
-        dataset_profile: SimulationStats object, default=None
-            dataset's profile
-        poll_to_cost: dict
-            cost change over each time of asking questions """
+        dataset_profile: data_model.DatasetProfile object, default=None
+        poll_to_report: OrderedDict,
+            cost's report change after each question
+            poll starts from 0
+    """
     def __init__(self, reviews, soli_config,
                  poll_count=20,
                  question_count=1,
@@ -119,10 +120,7 @@ class ReviewsSolicitation(ABC):
                 len(self.features),
                 optm_goal=soli_config.optm_goal,
                 dataset_profile=dataset_profile)
-        self.poll_to_cost = OrderedDict()
-        self.poll_to_cost[0] = self.uncertainty_book.report_uncertainty()
-        self.poll_to_ratings = OrderedDict()
-        self.poll_to_ratings[0] = np.copy(self.uncertainty_book.ratings)
+        self.poll_to_report = OrderedDict()
 
     def simulate(self):
         """Simulate the asking-aswering process."""
@@ -168,14 +166,14 @@ class ReviewsSolicitation(ABC):
                     rated_features.append((picked_feature, answered_star))
                 else:
                     picked_feature.no_answer_count += 1
-            self.poll_to_cost[i + 1] = \
+
+            self.poll_to_report[i] = \
                 self.uncertainty_book.report_uncertainty()
-            self.poll_to_ratings[i + 1] = \
-                np.copy(self.uncertainty_book.ratings)
 
         return SimulationStats(self.poll_count, self.question_count,
-                               self.poll_to_cost, self.poll_to_ratings,
-                               self.features, self.uncertainty_book.ratings)
+                               self.poll_to_report,
+                               self.features,
+                               criterion_to_prior=self.uncertainty_book.prior)
 
     @abstractmethod
     def answer_by_gen(self, picked_feature):
@@ -264,75 +262,78 @@ class ReviewsSolicitation(ABC):
 class SimulationStats(object):
     """Resulting statistics of simulation
     Attributes:
-        poll_count (int): how many time can ask customers
-        question_count (int): number of question per customer
-        poll_to_cost (dict): poll (int) -> UncertaintyReport
-        polls: list of polls
-        uncertainty_reports: list of uncertainty.UncertaintyReport
+        poll_count: int, how many time can ask customers
+        question_count: int, number of question per customer
+        poll_to_report: dict, poll -> UncertaintyReport
+            poll starts from 0
         features (list): list of data_model.Feature
-        final_ratings: 2d np array, from UncertaintyBook.ratings
+        criterion_to_prior: dict, from UncertaintyBook.prior
     """
-    def __init__(self, poll_count, question_count,
-                 poll_to_cost, poll_to_ratings,
-                 features, final_ratings):
+    def __init__(self, poll_count, question_count, poll_to_report, features,
+                 criterion_to_prior=None):
         self.poll_count = poll_count
         self.question_count = question_count
-        self.poll_to_cost = poll_to_cost
-        self.polls = list(self.poll_to_cost.keys())
-        self.uncertainty_reports = list(self.poll_to_cost.values())
+        self.poll_to_report = poll_to_report
+        self.polls = list(self.poll_to_report.keys())
+        self.uncertainty_reports = list(self.poll_to_report.values())
 
-        self.poll_to_ratings = poll_to_ratings
         self.features = features
-        self.no_answer_count = sum([feature.no_answer_count
-                                    for feature in self.features])
-        self.final_ratings = final_ratings
+        if features:
+            self.no_answer_count = sum([feature.no_answer_count
+                                        for feature in self.features])
+        self.criterion_to_prior = criterion_to_prior
 
     def stats_str(self, message='', detail=False):
         stat_str = message + '\n'
 
         if detail:
-            costs = ['{}: {:.3f}'.format(poll, cost)
-                     for poll, cost in self.poll_to_cost.items()]
-            stat_str += ', '.join(costs) + '\n'
+            reports = ['{}: {:.3f}'.format(poll, cost)
+                       for poll, cost in self.poll_to_report.items()]
+            stat_str += ', '.join(reports) + '\n'
         else:
-            last_poll = len(self.poll_to_cost) - 1
+            last_poll = len(self.poll_to_report) - 1
             stat_str += 'Final cost after {} polls:\n{}\n'.format(
-                last_poll, self.poll_to_cost[last_poll])
+                last_poll, self.poll_to_report[last_poll])
 
         stat_str += '/no_answer_count={}'.format(self.no_answer_count)
         return stat_str
 
     @classmethod
-    def average_statses(cls, sim_statses, ignore_rating=False):
-        """Averaging multiple product's sim stats."""
-        poll_to_costs = defaultdict(list)
-        poll_count = max([len(sim_stats.polls) for sim_stats in sim_statses])
-        for poll in range(poll_count):
+    def average_statses(cls, sim_statses,
+                        plotted_poll_end=100,
+                        ignore_rating=False):
+        """Averaging multiple product's sim stats.
+
+        Args:
+            sim_states: list of SimulationStats
+            plotted_poll_end: int, default=100
+                last poll to be plotted. Must re-weight weighted metric's
+                uncertainty accroding to this poll.
+            ignore_rating: bool, default=False,
+                ignore averaging rating of all products.
+        """
+        criterion_to_prior = sim_statses[0].criterion_to_prior
+        for sim_stats in sim_statses:
+            poll_end_ratings_count = np.sum(
+                    sim_stats.poll_to_report[plotted_poll_end].ratings, axis=1)
+            for report in sim_stats.poll_to_report.values():
+                report.re_weight_uncertainty(criterion_to_prior,
+                                             poll_end_ratings_count)
+
+        poll_to_reports = defaultdict(list)
+        for poll in range(plotted_poll_end):
             for sim_stats in sim_statses:
                 if poll >= len(sim_stats.polls):
                     continue
-                poll_to_costs[poll].append(sim_stats.poll_to_cost[poll])
+                poll_to_reports[poll].append(sim_stats.poll_to_report[poll])
 
-        poll_to_cost_average = OrderedDict()
-        for poll, costs in poll_to_costs.items():
-            poll_to_cost_average[poll] = UncertaintyReport.average_reports(
-                    costs)
+        poll_to_report_average = OrderedDict()
+        for poll, reports in poll_to_reports.items():
+            poll_to_report_average[poll] = UncertaintyReport.average_reports(
+                    reports, ignore_rating=ignore_rating)
 
-        # Averaging rating
-        poll_to_ratings_average = OrderedDict()
-        if not ignore_rating:
-            for sim_stats in sim_statses:
-                for poll, ratings in sim_stats.poll_to_ratings.items():
-                    if poll not in poll_to_ratings_average:
-                        poll_to_ratings_average[poll] = np.copy(ratings)
-                    else:
-                        poll_to_ratings_average[poll] += np.copy(ratings)
-
-            for ratings_average in poll_to_ratings_average.values():
-                ratings_average = ratings_average / len(sim_statses)
-
-        return SimulationStats(len(poll_to_costs),
+        features = None if ignore_rating else sim_statses[0].features
+        return SimulationStats(plotted_poll_end,
                                sim_statses[0].question_count,
-                               poll_to_cost_average,
-                               poll_to_ratings_average,
-                               sim_statses[0].features, None)
+                               poll_to_report_average,
+                               features)

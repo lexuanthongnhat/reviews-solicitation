@@ -24,12 +24,14 @@ class UncertaintyMetric(object):
     __metrics = []
 
     def __init__(self, criterion, weighted=False, correlated=False,
-                 cor_norm_factor=1.0, confid_select=None):
+                 cor_norm_factor=1.0, confid_select=None,
+                 unweighted_twin=None):
         self.criterion = criterion
         self.weighted = weighted
         self.correlated = correlated
         self.cor_norm_factor = cor_norm_factor
         self.confid_select = confid_select
+        self.unweighted_twin = unweighted_twin
 
     def __repr__(self):
         metric_str = self.criterion
@@ -64,9 +66,11 @@ class UncertaintyMetric(object):
             cls.__metrics.append(cls('expected_rating_var', weighted=False,
                                      correlated=True))
             cls.__metrics.append(cls('expected_rating_var', weighted=True,
-                                     correlated=False))
+                                     correlated=False,
+                                     unweighted_twin=cls.__metrics[0]))
             cls.__metrics.append(cls('expected_rating_var', weighted=True,
-                                     correlated=True))
+                                     correlated=True,
+                                     unweighted_twin=cls.__metrics[0]))
 
             cls.__metrics.append(cls('confidence_interval_len',
                                      confid_select=np.average))
@@ -82,7 +86,7 @@ class UncertaintyMetric(object):
     def optm_goals(cls):
         return cls.metrics()[:4]
 
-    weighted_criteria = ['expected_rating_var', 'confidence_interval_len']
+    weighted_criteria = ['expected_rating_var']
 
 
 class UncertaintyBook(object):
@@ -106,6 +110,8 @@ class UncertaintyBook(object):
             individual feature's uncertainty values
         uncertainties: 1d np array, shape: (feature_count, )
             feature's uncertainties after weighted, correlated
+        prior: dict, criterion -> {"count": xx, "uncertainty": yy}
+            store prior for weighted metric
     """
 
     def __init__(self, star_rank, feature_count, optm_goal=None,
@@ -125,6 +131,7 @@ class UncertaintyBook(object):
         self.independent_uncertainties = np.zeros(feature_count)
         self.uncertainties = np.zeros(feature_count)
         self.criterion_to_cache_unc = {}
+        self.correlations_cache = None
 
         self.ratings = np.zeros((feature_count, star_rank))
         self.co_ratings = np.ones((feature_count, feature_count,
@@ -139,8 +146,9 @@ class UncertaintyBook(object):
                 np.array(dataset_profile.feature_ratings))
             prior_uncertainty = np.average(ratings_uncertainties)
             prior_uncertainty_total = prior_rating_count * prior_uncertainty
-            self.prior[criterion] = {'count': prior_rating_count,
-                                     'uncertainty': prior_uncertainty_total}
+            self.prior[criterion] = {
+                    'count': prior_rating_count,
+                    'uncertainty_total': prior_uncertainty_total}
 
     def refresh_uncertainty(self):
         """Refresh (independent) uncertainties to reflect latest ratings.
@@ -148,6 +156,7 @@ class UncertaintyBook(object):
         Calculate based on self.criterion, self.weighted, self.correlated
         """
         self.criterion_to_cache_unc = {}
+        self.correlations_cache = None
 
         if self.optm_goal:
             self.independent_uncertainties, self.uncertainties = \
@@ -157,16 +166,12 @@ class UncertaintyBook(object):
         """Compute uncertainty using different criteria.
 
         Args:
-            uncertainty_func_name: str
-                function name of this module, e.g. 'dirichlet_var_sum',
-                'expected_rating_var', 'pearson_cor', 'confidence_interval_len'
-            weighted: bool
-            correlated: bool
-            cor_norm_factor: float
+            metric: UncertaintyMetric
         Returns:
             (indept_uncertainties, cor_uncertainties)
         """
         criterion = metric.criterion
+
         if criterion == 'confidence_region_vol':
             if criterion not in self.criterion_to_cache_unc:
                 self.criterion_to_cache_unc[criterion] = np.apply_along_axis(
@@ -185,35 +190,47 @@ class UncertaintyBook(object):
 
         if metric.weighted:
             rating_counts = np.sum(self.ratings, axis=1)
-            indept_uncertainties = (
-                indept_uncertainties * rating_counts
-                + self.prior[criterion]['uncertainty']) / (
-                rating_counts + self.prior[criterion]['count'])
+            indept_uncertainties = weighted_uncertainty(
+                    indept_uncertainties,
+                    rating_counts,
+                    self.prior[criterion]['uncertainty_total'],
+                    self.prior[criterion]['count'])
 
         if not metric.correlated:
             cor_uncertainties = np.copy(indept_uncertainties)
         else:
-            correlations = np.apply_along_axis(
-                pearson_cor_on_flatten, 2,
-                self.co_ratings.reshape(self.feature_count, self.feature_count,
-                                        self.star_rank * self.star_rank))
-            # Avoid divided by zero
-            if np.min(np.abs(correlations)) == 0.0:
-                correlations = np.abs(correlations) + 0.00001
+            if self.correlations_cache is None:
+                self.correlations_cache = get_feature_correlations(
+                        self.co_ratings, metric.cor_norm_factor)
+            cor_uncertainties = correlated_uncertainty(indept_uncertainties,
+                                                       self.correlations_cache)
 
-            if metric.cor_norm_factor != 1.0:
-                correlations = correlations / metric.cor_norm_factor
-            np.fill_diagonal(correlations, 1)
-            correlated_var = indept_uncertainties.reshape(
-                self.feature_count, 1) / np.abs(correlations)
-            cor_uncertainties = np.min(correlated_var, axis=1)
         return (indept_uncertainties, cor_uncertainties)
 
     def report_uncertainty(self):
-        report = UncertaintyReport()
-        for metric in UncertaintyMetric.metrics():
-            report.add_uncertainty(metric, self.uncertainty_total(metric))
+        """Report current uncertainty.
 
+        Don't report total uncertainties of weighted metrics since they need
+        to be re-weighted later for fair comparison.
+        Returns:
+            report: UncertaintyReport
+        """
+        metric_to_total = OrderedDict()
+        for metric in UncertaintyMetric.metrics():
+            if not metric.weighted:
+                metric_to_total[metric] = self.uncertainty_total(metric)
+            else:
+                metric_to_total[metric] = -1
+
+        base_criterion = UncertaintyMetric.metrics()[0].criterion
+        criterion_to_uncertainties = {
+                base_criterion: self.criterion_to_cache_unc[base_criterion]}
+
+        report = UncertaintyReport(
+            metric_to_total=metric_to_total,
+            ratings=self.ratings,
+            criterion_to_uncertainties=criterion_to_uncertainties,
+            correlations=self.correlations_cache)
         return report
 
     def uncertainty_total(self, metric):
@@ -258,43 +275,153 @@ class UncertaintyBook(object):
 
 class UncertaintyReport(object):
 
-    def __init__(self, metric_to_uncertainty_total={}):
-        self.uncertainty_totals = OrderedDict()
-        for metric, uncertainty in metric_to_uncertainty_total.items():
-            self.uncertainty_totals[metric] = uncertainty
+    def __init__(self,
+                 metric_to_total=OrderedDict(),
+                 ratings=None,
+                 criterion_to_uncertainties=None,
+                 correlations=None):
+        """Uncertainty Report at a specific point of simulation.
+
+        Attributes:
+            metric_to_total: dict, metric -> uncertainty total of all features
+            ratings: 2-d np array,
+                ratings of all features, from UncertaintyBook.ratings
+            criterion_to_uncertainties: dict,
+                base criterion -> independent uncertainties,
+                base metric are the one without weighted, correlated but not
+                confidence based. So far, base criterion is
+                'expected_rating_var'
+            correlations: 2-d np array,
+        """
+        self.metric_to_total = metric_to_total
+        self.ratings = ratings
+        self.criterion_to_uncertainties = criterion_to_uncertainties
+        self.correlations = correlations
 
     def add_uncertainty(self, metric, uncertainty_total):
-        self.uncertainty_totals[metric] = uncertainty_total
+        self.metric_to_total[metric] = uncertainty_total
 
     def __str__(self):
         strs = ['{:50s}: {:.3f}'.format(str(key), value)
-                for key, value in self.uncertainty_totals.items()]
+                for key, value in self.metric_to_total.items()]
         return '\n'.join(strs)
 
     def metrics(self):
-        return list(self.uncertainty_totals.keys())
+        return list(self.metric_to_total.keys())
 
-    def get_metric(self, metric):
-        return self.uncertainty_totals[metric]
+    def get_uncertainty_total(self, metric):
+        return self.metric_to_total[metric]
+
+    def re_weight_uncertainty(self, criterion_to_prior,
+                              poll_end_ratings_count):
+        """Re-weight weighted uncertainty to desired end poll.
+
+        To plot the uncertainty change of weighted metric over poll,
+        re-calculate each poll's uncertainty using feature rating counts at
+        poll_end.
+        Args:
+            criterion_to_prior: dict, criterion -> prior of weighted metrics
+                from UncertaintyBook.prior
+            poll_end_ratings_count: 1-d np array,
+                number of rating count at poll_end
+        """
+        for metric in UncertaintyMetric.metrics():
+            if metric.weighted:
+                indept_uncertainties = np.copy(
+                        self.criterion_to_uncertainties[metric.criterion])
+                prior = criterion_to_prior[metric.criterion]
+
+                indept_uncertainties = weighted_uncertainty(
+                        indept_uncertainties, poll_end_ratings_count,
+                        prior["uncertainty_total"], prior["count"])
+
+                if not metric.correlated:
+                    cor_uncertainties = np.copy(indept_uncertainties)
+                else:
+                    cor_uncertainties = correlated_uncertainty(
+                            indept_uncertainties, self.correlations)
+
+                self.metric_to_total[metric] = cor_uncertainties.sum()
 
     @classmethod
-    def average_reports(cls, uncertainty_reports):
-        if not uncertainty_reports or len(uncertainty_reports) < 1:
-            raise ValueError('Empty uncertainty_reports')
-        uncertainty_average = OrderedDict()
-        for metric in uncertainty_reports[0].metrics():
-            uncertainty_average[metric] = 0
-            for report in uncertainty_reports:
-                uncertainty_average[metric] += report.get_metric(metric)
-            uncertainty_average[metric] /= len(uncertainty_reports)
-        return cls(metric_to_uncertainty_total=uncertainty_average)
+    def average_reports(cls, reports, ignore_rating=False):
+        """Average multiple UncertaintyReport.
+
+        Args:
+            reports: list of UncertaintyReport
+            ignore_rating: bool, default=False,
+                ignore averaging rating of all products
+        """
+        if not reports or len(reports) < 1:
+            raise ValueError('Empty reports')
+
+        metric_to_uncertainty_total_average = OrderedDict()
+        for metric in reports[0].metrics():
+            metric_to_uncertainty_total_average[metric] = sum(
+                    [report.get_uncertainty_total(metric)
+                     for report in reports])
+            metric_to_uncertainty_total_average[metric] /= len(reports)
+
+        ratings_average = None
+        if not ignore_rating:
+            ratings_average = sum([report.ratings for report in reports])
+            ratings_average = ratings_average / len(reports)
+
+        return cls(metric_to_total=metric_to_uncertainty_total_average,
+                   ratings=ratings_average)
+
+
+def get_feature_correlations(co_ratings, cor_norm_factor=1.0):
+    """Compute feature's correlations matrix from co_ratings.
+
+    Correlation is calculated by function 'pearson_cor_on_flatten'
+    Args:
+        co_ratings: 4-d np array,
+            from UncertaintyBook.co_ratings
+            shape: (feature_count, feature_count, star_rank, star_rank)
+            2 first indices define a matrix of 2 features co-ocurrence ratings
+    Returns:
+        correlations: 2-d np array, shape: feature_count * feature_count
+            each cell represents 2 corresponding features' correlation
+    """
+    feature_count, star_rank = co_ratings.shape[1:3]
+    correlations = np.apply_along_axis(
+        pearson_cor_on_flatten, 2,
+        co_ratings.reshape(feature_count, feature_count,
+                           star_rank * star_rank))
+    # Avoid divided by zero later
+    if np.min(np.abs(correlations)) == 0.0:
+        correlations = np.abs(correlations) + 0.00001
+
+    if cor_norm_factor != 1.0:
+        correlations = correlations / cor_norm_factor
+
+    np.fill_diagonal(correlations, 1)
+    return correlations
+
+
+def correlated_uncertainty(indept_uncertainties, correlations):
+    """Compute feature's correlated uncertainty.
+
+    Formula: cor_uncertainty(feature_Xi)
+             = min {independent_uncertainty(feature_Xj) / correlation(Xi, Yj)}
+    """
+    feature_count = indept_uncertainties.shape[0]
+    correlated_var = indept_uncertainties.reshape(feature_count, 1) / np.abs(
+            correlations)
+    cor_uncertainties = np.min(correlated_var, axis=1)
+    return cor_uncertainties
 
 
 def weighted_uncertainty(uncertainty, rating_count,
-                         prior_count, prior_uncertainty):
-    """Weighted uncertainty using global/prior ratings."""
-    weighted_value = (rating_count * uncertainty + prior_count *
-                      prior_uncertainty) / (rating_count + prior_count)
+                         prior_uncertainty_total, prior_count):
+    """Weighted uncertainty using global/prior ratings.
+
+    uncertainty, rating_count can be np.array of same shape
+    prior_count/uncertainty should be scalar values
+    """
+    weighted_value = (rating_count * uncertainty + prior_uncertainty_total) / (
+            rating_count + prior_count)
     return weighted_value
 
 
