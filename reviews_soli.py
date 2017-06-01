@@ -208,8 +208,9 @@ class ReviewsSolicitation(ABC):
             excluded_uncertainties = np.copy(
                     self.uncertainty_book.uncertainties)
             excluded_uncertainties[already_picked_idx] = -float('inf')
-            max_idx = np.argmax(excluded_uncertainties)
-            return self.features[max_idx]
+            max_indices = np.where(
+                    excluded_uncertainties == excluded_uncertainties.max())[0]
+            return self.features[np.random.choice(max_indices)]
 
     def pick_with_prob(self, already_picked_idx):
         """Ask features with probability proportional to its cost,
@@ -255,8 +256,8 @@ class ReviewsSolicitation(ABC):
         rating_counts = self.uncertainty_book.get_rating_count()
         if already_picked_idx:
             rating_counts[already_picked_idx] = float('inf')
-        min_idx = np.argmin(rating_counts)
-        return self.features[min_idx]
+        min_indices = np.where(rating_counts == rating_counts.min())[0]
+        return self.features[np.random.choice(min_indices)]
 
 
 class SimulationStats(object):

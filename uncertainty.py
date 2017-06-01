@@ -133,7 +133,7 @@ class UncertaintyBook(object):
         self.criterion_to_cache_unc = {}
         self.correlations_cache = None
 
-        self.ratings = np.zeros((feature_count, star_rank))
+        self.ratings = np.ones((feature_count, star_rank))
         self.co_ratings = np.ones((feature_count, feature_count,
                                    star_rank, star_rank))
 
@@ -501,7 +501,7 @@ def confidence_interval_len(rating_counts, confidence_level=0.95):
         rating_counts: numpy array of star count
         confidence_level: float, default=0.95
     """
-    n = np.sum(rating_counts + 1)
+    n = np.sum(rating_counts)
 
     stars = np.arange(1, rating_counts.shape[0] + 1)
     mean = rating_counts.dot(stars) / n
@@ -511,6 +511,10 @@ def confidence_interval_len(rating_counts, confidence_level=0.95):
         return 0
     lower, upper = stats.t.interval(confidence_level, n - 1,
                                     loc=mean, scale=sd / np.sqrt(n))
+    if upper > len(rating_counts):
+        upper = len(rating_counts)
+    if lower < 1:
+        lower = 1
     return upper - lower
 
 
@@ -529,9 +533,7 @@ def confidence_region_vol(co_rating_samples_flatten, confidence_level=0.95):
         co_rating_samples_flatten: flatten co_ratings matrix of a single
             feature pair's in UncertaintyBook.co_ratings
     Returns:
-        vol_without_pi: volumn of confidence region (ellipse).
-            Note: vol = pi * major_axis * minor_axis but we discard "pi" since
-            it has no role in relative comparison between features
+        vol: volumn of confidence region (ellipse).
     """
     co_ratings_raw = _convert_co_rating_flatten_to_raw(
         co_rating_samples_flatten)
@@ -544,8 +546,8 @@ def confidence_region_vol(co_rating_samples_flatten, confidence_level=0.95):
     fixed_factor = np.sqrt((p * (n - 1) * f_value) / (n * (n - p)))
     ellipse_axes = fixed_factor * np.sqrt(np.abs(w)) * v
     ellipse_axes_len = np.linalg.norm(ellipse_axes, axis=0)
-    vol_without_pi = np.prod(ellipse_axes_len)
-    return vol_without_pi
+    vol = np.prod(ellipse_axes_len) * np.pi
+    return vol
 
 
 def _convert_co_rating_flatten_to_raw(co_rating_table_flatten):
