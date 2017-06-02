@@ -15,7 +15,7 @@ ch.setFormatter(logging.Formatter('%(asctime)s-%(levelname)s - %(message)s'))
 logger.addHandler(ch)
 
 RATING_COUNT_MIN = 10
-ASPECT_COUNT_MIN = 3
+ASPECT_COUNT_MIN = 4
 
 SENTIMENT_TO_STAR = {-3: 1, -2: 2, -1: 3, 1: 4, 2: 5, 3: 6}
 
@@ -64,6 +64,42 @@ class BliuReview(Review):
         logger.debug("{} products with aspects of at least {} ratings".format(
             len(product_to_reviews), RATING_COUNT_MIN))
         return product_to_reviews
+
+    @classmethod
+    def import_dataset_with_aspects(cls, path, star_rank=6, duplicate=False):
+        """Import Bliu dataset from a directory
+        Args:
+            path: string
+            star_rank: int, e.g. 5 means 1, 2, 3, 4 and 5 stars system
+            duplicate: bool, default=False, duplicate experiment scenario
+        Returns:
+        """
+        product_to_aspect_sentiments = defaultdict(list)
+        filepaths = []
+        for dirpath, dirnames, filenames in os.walk(path):
+            for filename in filenames:
+                if filename.endswith('.txt') \
+                        and not filename.startswith('Readme'):
+                    filepaths.append(os.path.join(dirpath, filename))
+
+        for filepath in filepaths:
+            product, anno_reviews = import_bliu_dataset(filepath)
+            aspect_to_sentiment_count = AnnoReview.aggregate_aspects(
+                    anno_reviews)
+            aspect_to_sentiment_count = _clean_dataset(
+                    aspect_to_sentiment_count)
+
+            if len(aspect_to_sentiment_count) >= ASPECT_COUNT_MIN:
+                logger.debug(product)
+                product_to_aspect_sentiments[product] = \
+                    aspect_to_sentiment_count
+            else:
+                logger.debug("Product with less than {} aspects: {}".format(
+                    ASPECT_COUNT_MIN, product))
+
+        logger.debug("{} products with aspects of at least {} ratings".format(
+            len(product_to_aspect_sentiments), RATING_COUNT_MIN))
+        return product_to_aspect_sentiments
 
     @classmethod
     def convert_anno_review_to_bliu(cls, anno_reviews, eligible_aspects):

@@ -30,6 +30,7 @@ def simulate_reviews_soli(product_to_reviews,
                           dataset='edmunds',
                           poll_count=100,
                           question_count=1,
+                          run_count=5,
                           review_count_lowbound=200,
                           dataset_profile=None,
                           **kwargs):
@@ -43,6 +44,8 @@ def simulate_reviews_soli(product_to_reviews,
             Number of polls (customers) to ask
         question_count: int, default=1
             Number of questions to ask a customer
+        run_count: int, default=5
+            Number of simulation run per product
         review_count_lowbound: int, default=200
             Only consider products with more than this lower bound into
         dataset_profile: SimulationStats object, default=None
@@ -71,17 +74,23 @@ def simulate_reviews_soli(product_to_reviews,
 
         config_to_sim_stats = OrderedDict()
         for soli_config in SoliConfig.configs(dataset):
-            reviews_soli_sim = review_soli_sim_cls(
-                    reviews, soli_config,
-                    poll_count=poll_count,
-                    question_count=question_count,
-                    seed_features=seed_features,
-                    dataset_profile=dataset_profile,
-                    **kwargs)
+            sim_statses = []
+            for i in range(run_count):
+                reviews_soli_sim = review_soli_sim_cls(
+                        reviews, soli_config,
+                        poll_count=poll_count,
+                        question_count=question_count,
+                        seed_features=seed_features,
+                        dataset_profile=dataset_profile,
+                        **kwargs)
+                sim_stats = reviews_soli_sim.simulate()
+                sim_statses.append(sim_stats)
 
-            sim_stat = reviews_soli_sim.simulate()
-            config_to_sim_stats[soli_config] = sim_stat
-            logger.debug(sim_stat.stats_str(str(soli_config)))
+            sim_stats_average = \
+                SimulationStats.average_same_product_statses(sim_statses)
+            config_to_sim_stats[soli_config] = sim_stats_average
+
+            logger.debug(sim_stats_average.stats_str(str(soli_config)))
         product_to_config_stats[product] = config_to_sim_stats
 
     return product_to_config_stats
@@ -169,6 +178,7 @@ def start_sim(args):
             dataset=args.dataset,
             poll_count=args.poll_count,
             question_count=args.question_count,
+            run_count=args.run_count,
             review_count_lowbound=args.review_count_lowbound,
             dataset_profile=dataset_profile,
             duplicate=args.duplicate)
@@ -190,6 +200,9 @@ if __name__ == '__main__':
     parser.add_argument(
             "--question-count", type=int, default=1,
             help="Number of questions to ask a customer (default=1)")
+    parser.add_argument(
+            "--run-count", type=int, default=5,
+            help="Number of simulation run per product (default=5)")
     parser.add_argument(
             "--review-count-lowbound", type=int, default=200,
             help="Only consider products with more than this lower bound into "

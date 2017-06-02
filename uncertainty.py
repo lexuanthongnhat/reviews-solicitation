@@ -1,6 +1,6 @@
 import unittest
 import itertools
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 
 import numpy as np
 import scipy.stats as stats
@@ -369,6 +369,34 @@ class UncertaintyReport(object):
 
         return cls(metric_to_total=metric_to_uncertainty_total_average,
                    ratings=ratings_average)
+
+    @classmethod
+    def average_same_product_reports(cls, reports):
+        """Average multiple UncertaintyReport of the same product.
+
+        This product is simulated multiple times
+        Args:
+            reports: list of UncertaintyReport
+        """
+        report_average = cls.average_reports(reports)
+
+        cor_average = sum([report.correlations for report in reports])
+        cor_average = cor_average / len(reports)
+
+        criterion_to_uncertainties_average = defaultdict(int)
+        for report in reports:
+            for criterion, uncertainties \
+                    in report.criterion_to_uncertainties.items():
+                criterion_to_uncertainties_average[criterion] += uncertainties
+        for criterion, uncertainties in \
+                criterion_to_uncertainties_average.items():
+            criterion_to_uncertainties_average[criterion] = \
+                    uncertainties / len(reports)
+
+        report_average.correlations = cor_average
+        report_average.criterion_to_uncertainties = \
+            criterion_to_uncertainties_average
+        return report_average
 
 
 def get_feature_correlations(co_ratings, cor_norm_factor=1.0):

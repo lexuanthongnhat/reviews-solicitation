@@ -337,3 +337,26 @@ class SimulationStats(object):
                                sim_statses[0].question_count,
                                poll_to_report_average,
                                features)
+
+    @classmethod
+    def average_same_product_statses(cls, sim_statses):
+        first_stats = sim_statses[0]
+
+        poll_to_reports = OrderedDict()
+        for stats in sim_statses:
+            for poll, report in stats.poll_to_report.items():
+                if poll not in poll_to_reports:
+                    poll_to_reports[poll] = []
+                poll_to_reports[poll].append(report)
+
+        poll_to_report_average = OrderedDict()
+        for poll, reports in poll_to_reports.items():
+            poll_to_report_average[poll] = \
+                    UncertaintyReport.average_same_product_reports(reports)
+
+        return SimulationStats(
+            first_stats.poll_count,
+            first_stats.question_count,
+            poll_to_report_average,
+            first_stats.features,
+            criterion_to_prior=first_stats.criterion_to_prior)
