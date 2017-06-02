@@ -7,7 +7,7 @@ import numpy as np
 class Review(ABC):
     """Abstract class for review
     Attributes:
-        feature_to_star: dict, feature name -> star
+        feature_to_stars: dict, feature name -> star
         star_rank: int (default=5), number of star levels
     """
     @property
@@ -22,17 +22,14 @@ class Review(ABC):
     def dup_scenario_features(self):
         return "Please implement this property!"
 
-    def __init__(self, feature_to_star, star_rank=5):
-        self.feature_to_star = feature_to_star
+    def __init__(self, feature_to_stars, star_rank=5):
+        self.feature_to_stars = feature_to_stars
         self.star_rank = star_rank
 
-        self.features = self.feature_to_star.keys()
-
-    def star_of_feature(self, feature):
-        return self.feature_to_star[feature]
+        self.features = self.feature_to_stars.keys()
 
     def __repr__(self):
-        return repr(self.feature_to_star)
+        return repr(self.feature_to_stars)
 
     @classmethod
     @abstractmethod
@@ -60,13 +57,15 @@ class Review(ABC):
             return None
 
         star_rank = reviews[0].star_rank
-        feature_to_stars = defaultdict(lambda: np.ones(star_rank))
+        feature_to_star_counts = defaultdict(lambda: np.ones(star_rank))
         for review in reviews:
-            for feature, star in review.feature_to_star.items():
-                feature_to_stars[feature][star - 1] += 1
+            for feature, stars in review.feature_to_stars.items():
+                for star in stars:
+                    feature_to_star_counts[feature][star - 1] += 1
 
-        feature_to_star_dist = {feature: stars / np.sum(stars)
-                                for feature, stars in feature_to_stars.items()}
+        feature_to_star_dist = {
+                feature: star_counts / np.sum(star_counts)
+                for feature, star_counts in feature_to_star_counts.items()}
 
         # Uniform dist for unknown features
         for feature in features:
@@ -96,7 +95,7 @@ class Review(ABC):
         feature_to_review_count = defaultdict(int)
         for product, reviews in product_to_reviews.items():
             for review in reviews:
-                for feature in review.feature_to_star.keys():
+                for feature in review.feature_to_stars.keys():
                     feature_to_review_count[feature] += 1
 
         feature_to_review_count_average = {
@@ -113,8 +112,9 @@ class Review(ABC):
         for product, reviews in product_to_reviews.items():
             local_feature_to_ratings = defaultdict(lambda: np.zeros(star_rank))
             for review in reviews:
-                for feature, star in review.feature_to_star.items():
-                    local_feature_to_ratings[feature][star - 1] += 1
+                for feature, stars in review.feature_to_stars.items():
+                    for star in stars:
+                        local_feature_to_ratings[feature][star - 1] += 1
 
             feature_ratings.extend(local_feature_to_ratings.values())
             product_to_feature_ratings[product] = local_feature_to_ratings

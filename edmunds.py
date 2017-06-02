@@ -71,13 +71,13 @@ class EdmundsReview(Review):
                                       key=lambda row: parse(row['created']))
 
             for row in time_sorted_rows:
-                feature_to_star = {feature: int(row[feature])
-                                   for feature in cls.seed_features
-                                   if row[feature]}
+                feature_to_stars = {
+                        feature: [int(row[feature])]
+                        for feature in cls.seed_features if row[feature]}
                 car = Car(row["make"], row["model"],
                           row["year"], row["styleId"])
                 car_to_reviews[car].append(
-                    cls(feature_to_star, star_rank=star_rank))
+                    cls(feature_to_stars, star_rank=star_rank))
 
         # Duplicate feature scenario: just for experimentation
         if duplicate:
@@ -89,15 +89,15 @@ class EdmundsReview(Review):
         car_to_reviews_trim = defaultdict(list)
         for car, reviews in car_to_reviews.items():
             for review in reviews:
-                dup_feature_to_star = {}
+                dup_feature_to_stars = {}
                 for feature in cls.dup_scenario_features:
                     if feature in review.features:
-                        dup_feature_to_star[feature] = review.feature_to_star[
-                                feature]
+                        dup_feature_to_stars[feature] = \
+                                review.feature_to_stars[feature]
                 if cls.dup_scenario_features[-2] in review.features:
-                    dup_feature_to_star[cls.dup_scenario_features[-1]] = \
-                        review.feature_to_star[cls.dup_scenario_features[-2]]
-                car_to_reviews_trim[car].append(cls(dup_feature_to_star,
+                    dup_feature_to_stars[cls.dup_scenario_features[-1]] = \
+                        review.feature_to_stars[cls.dup_scenario_features[-2]]
+                car_to_reviews_trim[car].append(cls(dup_feature_to_stars,
                                                     review.star_rank))
 
         return car_to_reviews_trim
@@ -128,11 +128,15 @@ class EdmundsReviewSolicitation(ReviewsSolicitation):
         Returns:
             answered_star: int
         """
+        # Run out of reviews, re-fetch from original reviews
+        if not self.reviews:
+            self.reviews = self.original_reviews.copy()
+
         answered_review = self.reviews[0]   # earliest review
         answered_star = None
-        if picked_feature.name in answered_review.feature_to_star.keys():
-            answered_star = answered_review.feature_to_star[
-                picked_feature.name]
+        if picked_feature.name in answered_review.features:
+            answered_star = np.random.choice(
+                    answered_review.feature_to_stars[picked_feature.name])
         self.num_waiting_answers -= 1
 
         if self.num_waiting_answers <= 0:

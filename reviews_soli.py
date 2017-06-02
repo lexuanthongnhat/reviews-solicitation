@@ -33,7 +33,7 @@ class SoliConfig(object):
                          'pick_random',
                          'pick_least_count']
             answer_mths = ['answer_by_gen']
-            if dataset == "edmunds":
+            if dataset == "edmunds" or dataset == "bliu":
                 answer_mths.append('answer_in_time_order')
 
             for pick, answer in itertools.product(pick_mths[2:], answer_mths):
@@ -88,7 +88,7 @@ class ReviewsSolicitation(ABC):
             poll starts from 0
     """
     def __init__(self, reviews, soli_config,
-                 poll_count=20,
+                 poll_count=100,
                  question_count=1,
                  seed_features=[],
                  dataset_profile=None,
@@ -98,10 +98,9 @@ class ReviewsSolicitation(ABC):
         self.original_reviews = reviews
         self.reviews = reviews.copy()
         self.star_rank = reviews[0].star_rank
-        self.soli_config = soli_config
 
-        self.poll_count = poll_count if poll_count <= len(reviews)\
-            and poll_count > 0 else len(reviews)
+        self.soli_config = soli_config
+        self.poll_count = poll_count
         self.question_count = question_count
 
         self.seed_features = seed_features

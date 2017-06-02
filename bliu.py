@@ -1,7 +1,7 @@
 import sys
 import os
 import logging
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 
 from data_model import Review
 from edmunds import EdmundsReviewSolicitation
@@ -16,6 +16,8 @@ logger.addHandler(ch)
 
 RATING_COUNT_MIN = 10
 ASPECT_COUNT_MIN = 3
+
+SENTIMENT_TO_STAR = {-3: 1, -2: 2, -1: 3, 1: 4, 2: 5, 3: 6}
 
 
 class BliuReview(Review):
@@ -33,29 +35,9 @@ class BliuReview(Review):
             duplicate: bool, default=False, duplicate experiment scenario
         Returns:
             product_to_reviews: dict,
-                product -> list of time-sorted EdmundsReview
+                product -> list of time-sorted BliuReview
         """
-        product_to_reviews = defaultdict(list)
-        product_to_aspect_sentiments = cls.import_dataset_with_aspects(path)
-        for product, aspect_to_sentiment_count \
-                in product_to_aspect_sentiments.items():
-            product_to_reviews[product] = cls.create_mock_reviews(
-                    aspect_to_sentiment_count, star_rank=6)
-
-        return product_to_reviews
-
-    @classmethod
-    def import_dataset_with_aspects(cls, path, star_rank=6, duplicate=False):
-        """Import Bliu dataset from a directory
-
-        Args:
-            path: string
-            star_rank: int, e.g. 5 means 1, 2, 3, 4 and 5 stars system
-            duplicate: bool, default=False, duplicate experiment scenario
-        Returns:
-
-        """
-        product_to_aspect_sentiments = defaultdict(list)
+        product_to_reviews = OrderedDict()
         filepaths = []
         for dirpath, dirnames, filenames in os.walk(path):
             for filename in filenames:
@@ -72,15 +54,31 @@ class BliuReview(Review):
 
             if len(aspect_to_sentiment_count) >= ASPECT_COUNT_MIN:
                 logger.debug(product)
-                product_to_aspect_sentiments[product] = \
-                    aspect_to_sentiment_count
+                product_to_reviews[product] = \
+                    cls.convert_anno_review_to_bliu(
+                            anno_reviews, aspect_to_sentiment_count.keys())
             else:
                 logger.debug("Product with less than {} aspects: {}".format(
                     ASPECT_COUNT_MIN, product))
 
         logger.debug("{} products with aspects of at least {} ratings".format(
-            len(product_to_aspect_sentiments), RATING_COUNT_MIN))
-        return product_to_aspect_sentiments
+            len(product_to_reviews), RATING_COUNT_MIN))
+        return product_to_reviews
+
+    @classmethod
+    def convert_anno_review_to_bliu(cls, anno_reviews, eligible_aspects):
+        bliu_reviews = []
+        for anno_review in anno_reviews:
+            feature_to_stars = defaultdict(list)
+            for aspect_sentiments in anno_review.sentence_to_aspects.values():
+                for aspect, sentiment in aspect_sentiments:
+                    if aspect in eligible_aspects:
+                        feature_to_stars[aspect].append(
+                                SENTIMENT_TO_STAR[sentiment])
+            if feature_to_stars:
+                bliu_reviews.append(cls(feature_to_stars, star_rank=6))
+
+        return bliu_reviews
 
     @classmethod
     def create_mock_reviews(cls, aspect_to_sentiment_count, star_rank=6):
@@ -97,8 +95,6 @@ class BliuReviewSolicitation(EdmundsReviewSolicitation):
     """Bliu reviews have a fixed set of features that make the
     simulation much simpler.
     """
-    def answer_in_time_order(self, picked_feature):
-        raise NotImplementedError("Bliu reviews don't support this method!")
 
 
 def _clean_dataset(aspect_to_sentiment_count):

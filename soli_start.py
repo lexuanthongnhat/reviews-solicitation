@@ -28,7 +28,7 @@ dataset_to_review_and_sim_cls = {
 def simulate_reviews_soli(product_to_reviews,
                           star_rank=5,
                           dataset='edmunds',
-                          poll_count=-1,
+                          poll_count=100,
                           question_count=1,
                           review_count_lowbound=200,
                           dataset_profile=None,
@@ -39,7 +39,7 @@ def simulate_reviews_soli(product_to_reviews,
         star_rank: int
             e.g. 5 means 1, 2, 3, 4 and 5 stars system
         dataset: string, default='edmunds'
-        poll_count: int, default=-1 (i.e. number of reviews of the product)
+        poll_count: int, default=100
             Number of polls (customers) to ask
         question_count: int, default=1
             Number of questions to ask a customer
