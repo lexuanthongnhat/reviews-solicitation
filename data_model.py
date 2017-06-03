@@ -33,10 +33,10 @@ class Review(ABC):
 
     @classmethod
     @abstractmethod
-    def import_dataset(cls, path, star_rank=5, duplicate=False):
+    def import_dataset(cls, dataset_path, star_rank=5, duplicate=False):
         """
         Args:
-            path: string
+            dataset_path: string
             star_rank: int, e.g. 5 means 1, 2, 3, 4 and 5 stars system
             duplicate: bool, default=False, duplicate experiment scenario
         Returns:

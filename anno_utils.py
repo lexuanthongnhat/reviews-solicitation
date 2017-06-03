@@ -1,4 +1,4 @@
-from os import path
+from os import path, walk
 import logging
 import argparse
 import re
@@ -20,26 +20,26 @@ class AnnoReview(object):
     Attributes:
         idx: int
         title: str
-        sentence_to_aspects: dict,
-            sentence (str) -> tuple of (aspect, sentiment)
+        polarized_sentences: dict,
+            sentence (str) -> tuple of (aspect, polarity)
         aspects: set
-            aspects are from sentence_to_aspects
+            aspects are from polarized_sentences
     """
     def __init__(self, idx, title):
         self.idx = idx
         self.title = title
-        self.sentence_to_aspects = OrderedDict()
+        self.polarized_sentences = OrderedDict()
         self.aspects = set([])
 
-    def add_sentence(self, sentence, aspect_sentiments):
+    def add_sentence(self, sentence, polarized_aspects):
         """Add sentence and its aspect, sentiments.
 
         Args:
             sentence: str
-            aspect_sentiments: list of tuple (aspect, sentiment)
+            polarized_aspects: list of tuple (aspect, polarity)
         """
-        self.sentence_to_aspects[sentence] = aspect_sentiments
-        for aspect, _ in aspect_sentiments:
+        self.polarized_sentences[sentence] = polarized_aspects
+        for aspect, _ in polarized_aspects:
             self.aspects.add(aspect)
 
     @classmethod
@@ -49,30 +49,32 @@ class AnnoReview(object):
         Args:
             anno_reviews: list of AnnoReview
         Returns:
-            aspect_to_sentiment_count: dict,
-                aspect -> {sentiment -> count}
+            aspect_to_polarity_counts: dict,
+                aspect -> {polarity -> count}
         """
-        aspect_to_sentiment_count = defaultdict(lambda: defaultdict(int))
+        aspect_to_polarity_counts = defaultdict(lambda: defaultdict(int))
         for review in anno_reviews:
-            for aspect_sentiments in review.sentence_to_aspects.values():
-                for aspect, sentiment in aspect_sentiments:
-                    aspect_to_sentiment_count[aspect][sentiment] += 1
+            for polarized_aspects in review.polarized_sentences.values():
+                for aspect, polarity in polarized_aspects:
+                    aspect_to_polarity_counts[aspect][polarity] += 1
 
-        return aspect_to_sentiment_count
+        return aspect_to_polarity_counts
 
 
-def import_bliu_dataset(file_path):
+def import_bliu_dataset(filepath):
     """
     Returns:
-        file_name, reviews, aspect_to_sentiment_count: tuple
-            file_name: str, also means product's name
+        product, aspect_to_polarity_counts, reviews: tuple
+            product: str, also means product's name
+            aspect_to_polarity_counts: dict,
+                aspect -> {polarity -> count}
             reviews: list of AnnoReview
     """
     REVIEW_TITLE_TAG = '[t]'
     SENTENCE_TAG = '##'
 
     reviews = []
-    with open(file_path, errors='ignore') as f:
+    with open(filepath, errors='ignore') as f:
         review = None
         for line in f:
             if line.startswith(REVIEW_TITLE_TAG):
@@ -86,57 +88,88 @@ def import_bliu_dataset(file_path):
                 continue
 
             # None-title line: supposed to be sentences
-            aspect_sentiment_str, sentence = line.split(SENTENCE_TAG)
-            aspect_sentiments = []
-            if aspect_sentiment_str:
-                for annotated_aspect in aspect_sentiment_str.split(','):
-                    if not annotated_aspect.strip():
+            polarized_aspect_str, sentence = line.split(SENTENCE_TAG)
+            polarized_aspects = []
+            if polarized_aspect_str:
+                for polarized_aspect in polarized_aspect_str.split(','):
+                    if not polarized_aspect.strip():
                         continue
-                    aspect = annotated_aspect[:annotated_aspect.find('[')]\
+                    aspect = polarized_aspect[:polarized_aspect.find('[')]\
                         .strip()
-                    sentiment_match = re.search(r'[\+\-]\d+', annotated_aspect)
-                    if sentiment_match:
-                        sentiment = int(sentiment_match.group(0))
-                        aspect_sentiments.append((aspect, sentiment))
+                    polarity_match = re.search(r'([\+\-]\d)\]',
+                                               polarized_aspect)
+                    if polarity_match:
+                        polarity = int(polarity_match.group(1))
+                        polarized_aspects.append((aspect, polarity))
                     else:
                         continue
 
             if not review:      # missing review title tag
                 review = AnnoReview(len(reviews), 'auto-created review title')
 
-            review.add_sentence(sentence, aspect_sentiments)
+            review.add_sentence(sentence, polarized_aspects)
 
         # flush the last review
         if review and (not reviews or review.idx != reviews[-1].idx):
             reviews.append(review)
 
-    file_name = path.splitext(path.basename(file_path))[0]
-    return (file_name, reviews)
+    aspect_to_polarity_counts = AnnoReview.aggregate_aspects(reviews)
+    product = path.splitext(path.basename(filepath))[0]
+    return (product, aspect_to_polarity_counts, reviews)
 
 
-def import_semeval_dataset(file_path):
+def import_semeval_dataset(filepath):
     """Import annotated dataset of SemEval 2014 Task 4.
 
     File is in xml format
+    Returns:
+        product: str,
+        aspect_to_polarity_counts: dict
     """
-    POLARITY_TO_SENTIMENT = {'positive': 3, 'neutral': 2, 'negative': 1}
-    aspect_to_sentiment_count = defaultdict(lambda: defaultdict(int))
+    POLARIZED_STR_TO_POLARITY = {'positive': 1, 'neutral': 0, 'negative': -1}
+    aspect_to_polarity_counts = defaultdict(lambda: defaultdict(int))
 
-    tree = etree.parse(file_path)
+    tree = etree.parse(filepath)
     for aspect_term_element in tree.getiterator(tag='aspectTerm'):
         aspect = aspect_term_element.attrib['term'].strip()
-        polarity = aspect_term_element.attrib['polarity'].strip()
+        polarity_str = aspect_term_element.attrib['polarity_str'].strip()
 
-        if polarity not in POLARITY_TO_SENTIMENT:
+        if polarity_str not in POLARIZED_STR_TO_POLARITY:
             continue
-        sentiment = POLARITY_TO_SENTIMENT[polarity]
-        aspect_to_sentiment_count[aspect][sentiment] += 1
+        polarity = POLARIZED_STR_TO_POLARITY[polarity_str]
+        aspect_to_polarity_counts[aspect][polarity] += 1
 
-    for aspect, sentiment_count in aspect_to_sentiment_count.items():
-        count = sum([count for count in sentiment_count.values()])
-        if count >= 20 and len(sentiment_count) >= 5:
-            logger.debug('{:16s}: {}'.format(aspect, sentiment_count))
-    logger.debug('There are {} aspects'.format(len(aspect_to_sentiment_count)))
+    for aspect, polarity_to_count in aspect_to_polarity_counts.items():
+        count = sum([count for count in polarity_to_count.values()])
+        if count >= 20 and len(polarity_to_count) >= 5:
+            logger.debug('{:16s}: {}'.format(aspect, polarity_to_count))
+    logger.debug('There are {} aspects'.format(len(aspect_to_polarity_counts)))
+
+    product = path.splitext(path.basename(filepath))[0]
+    return (product, aspect_to_polarity_counts)
+
+
+def match_datafiles(dataset_dir, end_substr=".txt"):
+    """Get data's file path in directory with expected end sub string.
+
+    Args:
+        dataset_dir: str,
+            directory of dataset
+        end_substr: str, default=".txt"
+            sub-string of file path ending, used to match the file
+    Returns:
+        filepaths: list of str
+    """
+    filepaths = []
+    for dirpath, dirnames, filenames in walk(dataset_dir):
+        for filename in filenames:
+            if filename.endswith(end_substr) \
+                    and not filename.startswith('Readme'):
+                filepaths.append(path.join(dirpath, filename))
+    logger.debug("Matched files in dir '{}' are: {}".format(
+        dataset_dir, ", ".join(filepaths)))
+
+    return filepaths
 
 
 if __name__ == '__main__':

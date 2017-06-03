@@ -10,6 +10,7 @@ from data_model import Review
 from reviews_soli import SimulationStats, SoliConfig
 from edmunds import EdmundsReview, EdmundsReviewSolicitation
 from bliu import BliuReview, BliuReviewSolicitation
+from semeval import SemevalReview, SemevalReviewSolicitation
 
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,8 @@ logger.addHandler(ch)
 
 dataset_to_review_and_sim_cls = {
     'edmunds': (5, EdmundsReview, EdmundsReviewSolicitation),
-    'bliu': (6, BliuReview, BliuReviewSolicitation)
+    'bliu': (6, BliuReview, BliuReviewSolicitation),
+    'semeval': (3, SemevalReview, SemevalReviewSolicitation)
 }
 
 
@@ -68,7 +70,7 @@ def simulate_reviews_soli(product_to_reviews,
     for product, reviews in product_to_reviews.items():
         logger.debug("Running over '{}'".format(product))
         # different aspects set for each product
-        if dataset == 'bliu':
+        if dataset == 'bliu' or dataset == 'semeval':
             seed_features = set([feature for review in reviews
                                  for feature in review.features])
 
