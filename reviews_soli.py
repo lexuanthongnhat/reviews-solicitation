@@ -17,35 +17,34 @@ class SoliConfig(object):
         answer: str, func name of answering method
         optm_goal: uncertainty.UncertaintyMetric
     """
-    __dataset_to_configs = {}
-
     def __init__(self, pick, answer, optm_goal=None):
         self.pick = pick
         self.answer = answer
         self.optm_goal = optm_goal
 
     @classmethod
-    def configs(cls, dataset="edmunds"):
-        if dataset not in cls.__dataset_to_configs:
-            __configs = []
-            pick_mths = ['pick_highest_cost',
-                         'pick_with_prob',
-                         'pick_random',
-                         'pick_least_count']
-            answer_mths = ['answer_by_gen']
-            if dataset == "edmunds" or dataset == "bliu":
-                answer_mths.append('answer_in_time_order')
+    def build(cls,
+              pick_mths=['pick_highest_cost', 'pick_with_prob'],
+              answer_mths=['answer_by_gen', 'answer_in_time_order'],
+              optm_goals=[UncertaintyMetric('expected_rating_var')]
+              ):
+        """Build Solicitation Configuration.
 
-            for pick, answer in itertools.product(pick_mths[2:], answer_mths):
-                __configs.append(cls(pick, answer))
-            for pick, answer, goal in itertools.product(
-                    pick_mths[:2], answer_mths,
-                    UncertaintyMetric.optm_goals()):
-                __configs.append(cls(pick, answer, optm_goal=goal))
+        Baseline configs are always in the beginning of the return list.
+        Returns:
+            configs: list of SoliConfig
+        """
+        configs = []
 
-            cls.__dataset_to_configs[dataset] = __configs
+        pick_baselines = ['pick_random', 'pick_least_count']
+        for pick, answer in itertools.product(pick_baselines, answer_mths):
+            configs.append(cls(pick, answer))
 
-        return cls.__dataset_to_configs[dataset]
+        for pick, answer, goal in itertools.product(pick_mths, answer_mths,
+                                                    optm_goals):
+            configs.append(cls(pick, answer, optm_goal=goal))
+
+        return configs
 
     def pick_goal_str(self):
         config = self.pick
@@ -77,6 +76,7 @@ class ReviewsSolicitation(ABC):
     Attributes:
         reviews: list of data_model.Review
         soli_config: SoliConfig object
+        metrics: list of UncertaintyMetric objects
         poll_count: int, default=-1 (i.e. len(reviews))
             how many times can ask customers
         question_count: int, default=1,
@@ -87,7 +87,7 @@ class ReviewsSolicitation(ABC):
             cost's report change after each question
             poll starts from 0
     """
-    def __init__(self, reviews, soli_config,
+    def __init__(self, reviews, soli_config, metrics,
                  poll_count=100,
                  question_count=1,
                  seed_features=[],
@@ -100,6 +100,7 @@ class ReviewsSolicitation(ABC):
         self.star_rank = reviews[0].star_rank
 
         self.soli_config = soli_config
+        self.metrics = metrics
         self.poll_count = poll_count
         self.question_count = question_count
 
@@ -167,7 +168,7 @@ class ReviewsSolicitation(ABC):
                     picked_feature.no_answer_count += 1
 
             self.poll_to_report[i] = \
-                self.uncertainty_book.report_uncertainty()
+                self.uncertainty_book.report_uncertainty(self.metrics)
 
         return SimulationStats(self.poll_count, self.question_count,
                                self.poll_to_report,

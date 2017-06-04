@@ -70,13 +70,13 @@ class BliuReview(Review):
 
             if aspect_to_star_counts:
                 product_to_reviews[product] = cls.convert_anno_review_to_bliu(
-                    anno_reviews, aspect_to_polarity_counts.keys())
+                    anno_reviews, aspect_to_star_counts.keys())
                 product_to_aspects[product] = aspect_to_star_counts
 
         logger.debug("{} products with at least {} aspects, each aspect has "
-                     " at least {} ratings".format(len(product_to_reviews),
-                                                   ASPECT_COUNT_MIN,
-                                                   RATING_COUNT_MIN))
+                     "at least {} ratings".format(len(product_to_reviews),
+                                                  ASPECT_COUNT_MIN,
+                                                  RATING_COUNT_MIN))
         return (product_to_reviews, product_to_aspects)
 
     @classmethod

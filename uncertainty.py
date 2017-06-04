@@ -24,14 +24,12 @@ class UncertaintyMetric(object):
     __metrics = []
 
     def __init__(self, criterion, weighted=False, correlated=False,
-                 cor_norm_factor=1.0, confid_select=None,
-                 unweighted_twin=None):
+                 cor_norm_factor=1.0, confid_select=None):
         self.criterion = criterion
         self.weighted = weighted
         self.correlated = correlated
         self.cor_norm_factor = cor_norm_factor
         self.confid_select = confid_select
-        self.unweighted_twin = unweighted_twin
 
     def __repr__(self):
         metric_str = self.criterion
@@ -61,16 +59,16 @@ class UncertaintyMetric(object):
     @classmethod
     def metrics(cls):
         if not cls.__metrics:
+            cls.__metrics.append(cls('dirichlet_var_sum', weighted=False,
+                                     correlated=False))
             cls.__metrics.append(cls('expected_rating_var', weighted=False,
                                      correlated=False))
             cls.__metrics.append(cls('expected_rating_var', weighted=False,
                                      correlated=True))
             cls.__metrics.append(cls('expected_rating_var', weighted=True,
-                                     correlated=False,
-                                     unweighted_twin=cls.__metrics[0]))
+                                     correlated=False))
             cls.__metrics.append(cls('expected_rating_var', weighted=True,
-                                     correlated=True,
-                                     unweighted_twin=cls.__metrics[0]))
+                                     correlated=True))
 
             cls.__metrics.append(cls('confidence_interval_len',
                                      confid_select=np.average))
@@ -84,7 +82,7 @@ class UncertaintyMetric(object):
 
     @classmethod
     def optm_goals(cls):
-        return cls.metrics()[:4]
+            return cls.metrics()[:5]
 
     weighted_criteria = ['expected_rating_var']
 
@@ -207,24 +205,29 @@ class UncertaintyBook(object):
 
         return (indept_uncertainties, cor_uncertainties)
 
-    def report_uncertainty(self):
+    def report_uncertainty(self, metrics):
         """Report current uncertainty.
 
         Don't report total uncertainties of weighted metrics since they need
         to be re-weighted later for fair comparison.
+        Args:
+            metrics: list of UncertaintyMetric objects
         Returns:
             report: UncertaintyReport
         """
         metric_to_total = OrderedDict()
-        for metric in UncertaintyMetric.metrics():
+        for metric in metrics:
             if not metric.weighted:
                 metric_to_total[metric] = self.uncertainty_total(metric)
             else:
                 metric_to_total[metric] = -1
 
         base_criterion = UncertaintyMetric.metrics()[0].criterion
-        criterion_to_uncertainties = {
+        if base_criterion in self.criterion_to_cache_unc:
+            criterion_to_uncertainties = {
                 base_criterion: self.criterion_to_cache_unc[base_criterion]}
+        else:
+            criterion_to_uncertainties = {}
 
         report = UncertaintyReport(
             metric_to_total=metric_to_total,
@@ -234,17 +237,17 @@ class UncertaintyBook(object):
         return report
 
     def uncertainty_total(self, metric):
-        """Total uncertainties of all features.
+        """Aggregate uncertainties of all features.
 
         Args:
             metric: UncertaintyMetric
         Returns:
-            sum of all features' uncertainties, float
+            Aggregate by averaging all features' uncertainties, float
         """
         _, cor_uncertainties = self.compute_uncertainty(metric)
         if metric.confid_select:
             return metric.confid_select(cor_uncertainties)
-        return cor_uncertainties.sum()
+        return cor_uncertainties.mean()
 
     def get_rating_count(self):
         """Get the number of rating per feature.
@@ -325,7 +328,7 @@ class UncertaintyReport(object):
             poll_end_ratings_count: 1-d np array,
                 number of rating count at poll_end
         """
-        for metric in UncertaintyMetric.metrics():
+        for metric in self.metric_to_total.keys():
             if metric.weighted:
                 indept_uncertainties = np.copy(
                         self.criterion_to_uncertainties[metric.criterion])
@@ -380,8 +383,10 @@ class UncertaintyReport(object):
         """
         report_average = cls.average_reports(reports)
 
-        cor_average = sum([report.correlations for report in reports])
-        cor_average = cor_average / len(reports)
+        cor_average = None
+        if reports and reports[0].correlations:
+            cor_average = sum([report.correlations for report in reports])
+            cor_average = cor_average / len(reports)
 
         criterion_to_uncertainties_average = defaultdict(int)
         for report in reports:
