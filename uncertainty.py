@@ -18,23 +18,22 @@ class UncertaintyMetric(object):
             infer a feature's uncertainty by other highly correlated features
         cor_norm_factor: float, default=1.0
             normalization factor for correlation
-        confid_select: aggregate function, default=np.average
-            select from list of confidence interval len or region volumn
+        aggregate: aggregate function, default=np.max
+            select from list of feature's uncertainty
     """
     __metrics = []
 
     def __init__(self, criterion, weighted=False, correlated=False,
-                 cor_norm_factor=1.0, confid_select=None):
+                 cor_norm_factor=1.0, aggregate=np.max):
         self.criterion = criterion
         self.weighted = weighted
         self.correlated = correlated
         self.cor_norm_factor = cor_norm_factor
-        self.confid_select = confid_select
+        self.aggregate = aggregate
 
     def __repr__(self):
         metric_str = self.criterion
-        if self.criterion.find('confidence') >= 0:
-            metric_str += '_' + self.confid_select.__name__
+        metric_str += '_' + self.aggregate.__name__
         metric_str += '_weighted' if self.weighted else ''
         metric_str += '_correlated' if self.correlated else ''
         if self.correlated and self.cor_norm_factor != 1.0:
@@ -47,14 +46,14 @@ class UncertaintyMetric(object):
             and self.weighted == other.weighted \
             and self.correlated == other.correlated \
             and self.cor_norm_factor == other.cor_norm_factor \
-            and self.confid_select == other.confid_select
+            and self.aggregate == other.aggregate
 
     def __neq__(self, other):
         return not self.__eq__(other)
 
     def __hash__(self):
         return hash((self.criterion, self.weighted, self.correlated,
-                     self.cor_norm_factor, str(self.confid_select)))
+                     self.cor_norm_factor, str(self.aggregate)))
 
     @classmethod
     def metrics(cls):
@@ -71,13 +70,13 @@ class UncertaintyMetric(object):
                                      correlated=True))
 
             cls.__metrics.append(cls('confidence_interval_len',
-                                     confid_select=np.average))
+                                     aggregate=np.average))
             cls.__metrics.append(cls('confidence_interval_len',
-                                     confid_select=np.max))
+                                     aggregate=np.max))
             cls.__metrics.append(cls('confidence_region_vol',
-                                     confid_select=np.average))
+                                     aggregate=np.average))
             cls.__metrics.append(cls('confidence_region_vol',
-                                     confid_select=np.max))
+                                     aggregate=np.max))
         return cls.__metrics
 
     @classmethod
@@ -177,8 +176,7 @@ class UncertaintyBook(object):
                         self.feature_count, self.feature_count,
                         self.star_rank * self.star_rank))
             confid_region_vols = self.criterion_to_cache_unc[criterion]
-            cor_uncertainties = metric.confid_select(confid_region_vols,
-                                                     axis=1)
+            cor_uncertainties = metric.aggregate(confid_region_vols, axis=1)
             return (cor_uncertainties, cor_uncertainties)
 
         if criterion not in self.criterion_to_cache_unc:
@@ -242,12 +240,10 @@ class UncertaintyBook(object):
         Args:
             metric: UncertaintyMetric
         Returns:
-            Aggregate by averaging all features' uncertainties, float
+            Aggregate by all features' uncertainties, float
         """
         _, cor_uncertainties = self.compute_uncertainty(metric)
-        if metric.confid_select:
-            return metric.confid_select(cor_uncertainties)
-        return cor_uncertainties.mean()
+        return metric.aggregate(cor_uncertainties)
 
     def get_rating_count(self):
         """Get the number of rating per feature.

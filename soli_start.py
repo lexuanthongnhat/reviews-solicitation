@@ -50,8 +50,9 @@ class Scenario(object):
                     )
                 metrics = [UncertaintyMetric('dirichlet_var_sum'),
                            UncertaintyMetric('expected_rating_var'),
+                           UncertaintyMetric('confidence_interval_len'),
                            UncertaintyMetric('confidence_interval_len',
-                                             confid_select=np.average)
+                                             aggregate=np.average)
                            ]
                 cls.__scenarios[name] = cls(name, soli_configs, metrics)
 
@@ -139,25 +140,28 @@ def summary_product_to_config_stats(product_to_config_stats,
     Args:
         product_to_config_stats: dict
             product -> config_to_sim_stats, in which
-            config_to_sim_stats: SoliConfig -> list of SimulationStats,
-                corresponding to SoliConfig.configs()
+            config_to_sim_stats: SoliConfig -> SimulationStats,
         ignore_rating: bool, default=False
             do not average ratings of multiple products
+    Returns:
+        soliconfig_to_stats_average: dict,
+            soliconfig (SoliConfig) -> SimulationStats
     """
-    # goal -> SimulationStats (poll_to_cost)
-    goal_to_statses = OrderedDict()
+    soliconfig_to_statses = OrderedDict()
     for config_to_stats in product_to_config_stats.values():
         for config, sim_stats in config_to_stats.items():
-            if config not in goal_to_statses:
-                goal_to_statses[config] = []
-            goal_to_statses[config].append(sim_stats)
+            if config not in soliconfig_to_statses:
+                soliconfig_to_statses[config] = []
+            soliconfig_to_statses[config].append(sim_stats)
 
-    goal_to_stats_average = OrderedDict()
-    for goal, statses in goal_to_statses.items():
-        goal_to_stats_average[goal] = SimulationStats.average_statses(
-                statses, plotted_poll_end=plotted_poll_end,
-                ignore_rating=ignore_rating)
-    return goal_to_stats_average
+    soliconfig_to_stats_average = OrderedDict()
+    for soliconfig, statses in soliconfig_to_statses.items():
+        soliconfig_to_stats_average[soliconfig] = \
+                SimulationStats.average_statses(
+                        statses,
+                        plotted_poll_end=plotted_poll_end,
+                        ignore_rating=ignore_rating)
+    return soliconfig_to_stats_average
 
 
 def summary_optim_goal_ratings(optim_goal_to_product_result_stats):
