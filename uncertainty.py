@@ -464,6 +464,17 @@ def dirichlet_var_sum(ratings):
     return sum(stats.dirichlet.var(dirichlet_params))
 
 
+def naive_var(ratings):
+    """Naive (dicrete) variance of aspect without Bayesian inference.
+    Args:
+        ratings: list, numpy array of star
+    """
+    stars = []
+    for i in range(len(ratings)):
+        stars.extend([i + 1] * int(ratings[i]))
+    return np.var(stars)
+
+
 def expected_rating_var(ratings):
     """Variance of feature's expected rating.
         Var(r|x) = Var(E[\#stars])

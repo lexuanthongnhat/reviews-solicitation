@@ -46,10 +46,12 @@ class Scenario(object):
                     pick_mths=['pick_highest_cost'],
                     answer_mths=['answer_by_gen'],
                     optm_goals=[UncertaintyMetric('dirichlet_var_sum'),
-                                UncertaintyMetric('expected_rating_var')]
+                                UncertaintyMetric('expected_rating_var'),
+                                UncertaintyMetric('naive_var')]
                     )
                 metrics = [UncertaintyMetric('dirichlet_var_sum'),
                            UncertaintyMetric('expected_rating_var'),
+                           UncertaintyMetric('naive_var'),
                            UncertaintyMetric('confidence_interval_len'),
                            UncertaintyMetric('confidence_interval_len',
                                              aggregate=np.average)
