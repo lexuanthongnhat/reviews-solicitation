@@ -43,15 +43,24 @@ class Scenario(object):
         if name == "2goals_3metrics":
             if name not in cls.__scenarios:
                 soli_configs = SoliConfig.build(
-                    pick_mths=['pick_highest_cost'],
+                    pick_mths=['pick_highest'],
                     answer_mths=['answer_by_gen'],
-                    optm_goals=[UncertaintyMetric('dirichlet_var_sum'),
+                    optm_goals=[
                                 UncertaintyMetric('expected_rating_var'),
-                                UncertaintyMetric('naive_var')]
+                                UncertaintyMetric('distribution_change'),
+                                # UncertaintyMetric('var_change'),
+                                ]
                     )
-                metrics = [UncertaintyMetric('dirichlet_var_sum'),
+                metrics = [
                            UncertaintyMetric('expected_rating_var'),
-                           UncertaintyMetric('naive_var'),
+                           UncertaintyMetric('expected_rating_var',
+                                             aggregate=np.average),
+                           UncertaintyMetric('distribution_change'),
+                           UncertaintyMetric('distribution_change',
+                                             aggregate=np.average),
+                           # UncertaintyMetric('var_change'),
+                           # UncertaintyMetric('var_change',
+                           #                   aggregate=np.average),
                            UncertaintyMetric('confidence_interval_len'),
                            UncertaintyMetric('confidence_interval_len',
                                              aggregate=np.average)

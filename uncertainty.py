@@ -32,8 +32,12 @@ class UncertaintyMetric(object):
         self.aggregate = aggregate
 
     def __repr__(self):
+        return self.show(show_aggregate=True)
+
+    def show(self, show_aggregate=False):
         metric_str = self.criterion
-        metric_str += '_' + self.aggregate.__name__
+        if show_aggregate:
+            metric_str += '_' + self.aggregate.__name__
         metric_str += '_weighted' if self.weighted else ''
         metric_str += '_correlated' if self.correlated else ''
         if self.correlated and self.cor_norm_factor != 1.0:
@@ -134,6 +138,8 @@ class UncertaintyBook(object):
         self.co_ratings = np.ones((feature_count, feature_count,
                                    star_rank, star_rank))
 
+        self.prev_ratings = np.ones((feature_count, star_rank))
+
     def _init_prior(self, dataset_profile):
         self.prior = {}
         for criterion in UncertaintyMetric.weighted_criteria:
@@ -155,6 +161,7 @@ class UncertaintyBook(object):
         self.criterion_to_cache_unc = {}
         self.correlations_cache = None
 
+        # Update uncertainties for the next pick in simulation
         if self.optm_goal:
             self.independent_uncertainties, self.uncertainties = \
                 self.compute_uncertainty(self.optm_goal)
@@ -169,7 +176,7 @@ class UncertaintyBook(object):
         """
         criterion = metric.criterion
 
-        if criterion == 'confidence_region_vol':
+        if criterion == "confidence_region_vol":
             if criterion not in self.criterion_to_cache_unc:
                 self.criterion_to_cache_unc[criterion] = np.apply_along_axis(
                     globals()[criterion], 2, self.co_ratings.reshape(
@@ -178,6 +185,13 @@ class UncertaintyBook(object):
             confid_region_vols = self.criterion_to_cache_unc[criterion]
             cor_uncertainties = metric.aggregate(confid_region_vols, axis=1)
             return (cor_uncertainties, cor_uncertainties)
+
+        if criterion == "distribution_change" or criterion == "var_change":
+            if criterion not in self.criterion_to_cache_unc:
+                self.criterion_to_cache_unc[criterion] = \
+                        globals()[criterion](self.ratings, self.prev_ratings)
+            indept_uncertainties = self.criterion_to_cache_unc[criterion]
+            return (indept_uncertainties, indept_uncertainties)
 
         if criterion not in self.criterion_to_cache_unc:
             self.criterion_to_cache_unc[criterion] = np.apply_along_axis(
@@ -258,6 +272,8 @@ class UncertaintyBook(object):
         if star < 1 or star > self.star_rank:
             raise IndexError('Wrong star rating (>=1 and <={})'.format(
                 self.star_rank))
+        self.prev_ratings[feature.idx, :] = \
+            np.copy(self.ratings[feature.idx, :])
         self.ratings[feature.idx, star - 1] += count
 
     def rate_2features(self, feature1, star1, feature2, star2):
@@ -462,6 +478,55 @@ def dirichlet_var_sum(ratings):
     """
     dirichlet_params = np.array(ratings) + 1
     return sum(stats.dirichlet.var(dirichlet_params))
+
+
+def distribution_change(ratings, prev_ratings):
+    """Uncertainty by considering distribution change.
+    Idea: if one more rating doesn't change aspect's distribution much, then
+    that aspect is quite stable.
+    Change is computed by Euclidean distance between the ratings and the
+    previous updated ratings.
+
+    Args:
+        ratings: 2d np array
+            expect from UncertaintyBook.ratings
+        prev_ratings: 2d np array
+            same shape as ratings
+    Returns:
+        uncertainties: 1d np array
+    """
+    norm_ratings = ratings / ratings.sum(axis=1).reshape(-1, 1)
+    norm_prev_ratings = prev_ratings / prev_ratings.sum(axis=1).reshape(-1, 1)
+    norm_diff = norm_ratings - norm_prev_ratings
+    uncertainties = np.linalg.norm(norm_diff, axis=1)
+    uncertainties[np.all(ratings == prev_ratings, axis=1)] = \
+        np.max(uncertainties)
+    return uncertainties
+
+
+def var_change(ratings, prev_ratings):
+    """Uncertainty by considering distribution change.
+    Idea: if one more rating doesn't change aspect's distribution much, then
+    that aspect is quite stable.
+    Change is computed by Variance change between the ratings and the
+    previous updated ratings.
+
+    Args:
+        ratings: 2d np array
+            expect from UncertaintyBook.ratings
+        prev_ratings: 2d np array
+            same shape as ratings
+    Returns:
+        uncertainties: 1d np array
+    """
+    base_criterion = "expected_rating_var"
+    curr_uncertainties = np.apply_along_axis(globals()[base_criterion], 1,
+                                             ratings)
+    prev_uncertainties = np.apply_along_axis(globals()[base_criterion], 1,
+                                             prev_ratings)
+    var_diff = np.abs(curr_uncertainties - prev_uncertainties)
+    var_diff[np.all(ratings == prev_ratings, axis=1)] = np.max(var_diff) + 0.01
+    return var_diff
 
 
 def naive_var(ratings):

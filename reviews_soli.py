@@ -24,7 +24,7 @@ class SoliConfig(object):
 
     @classmethod
     def build(cls,
-              pick_mths=['pick_highest_cost', 'pick_with_prob'],
+              pick_mths=['pick_highest', 'pick_prob'],
               answer_mths=['answer_by_gen', 'answer_in_time_order'],
               optm_goals=[UncertaintyMetric('expected_rating_var')]
               ):
@@ -49,7 +49,7 @@ class SoliConfig(object):
     def pick_goal_str(self):
         config = self.pick
         if self.optm_goal:
-            config += '_by_' + str(self.optm_goal)
+            config += '_' + self.optm_goal.show()
         return config
 
     def __repr__(self):
@@ -193,7 +193,7 @@ class ReviewsSolicitation(ABC):
             answered_star: int
         """
 
-    def pick_highest_cost(self, already_picked_idx):
+    def pick_highest(self, already_picked_idx):
         """Pick a feature with highest cost, break tie arbitrarily.
         Args:
             already_picked_idx: list
@@ -212,7 +212,7 @@ class ReviewsSolicitation(ABC):
                     excluded_uncertainties == excluded_uncertainties.max())[0]
             return self.features[np.random.choice(max_indices)]
 
-    def pick_with_prob(self, already_picked_idx):
+    def pick_prob(self, already_picked_idx):
         """Ask features with probability proportional to its cost,
         Args:
             already_picked_idx: list

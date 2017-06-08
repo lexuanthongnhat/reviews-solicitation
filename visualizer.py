@@ -3,22 +3,32 @@ import math
 
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-# import seaborn as sns
+import seaborn as sns
 import numpy as np
 
 
 def plot_sim_stats(soliconfig_to_stats,
-                   poll=100, fig_w=16, subplt_fig_h=5, plot_rating=True,
+                   poll=100, fig_w=16, subplt_fig_h=6, plot_rating=True,
                    product=None, aspect_to_star_counts=None):
     """Plot a product's rating distribution and simulation result statistics.
     Args:
         soliconfig_to_stats_average: dict,
             soliconfig (SoliConfig) -> SimulationStats
         poll: int, default=100
+        fig_w: int, default=16,
+            figure width
+        subplt_fig_h: int, default=5,
+            subplot height
+        plot_rating: bool, default=True
+        product: str
+            apply when plot_rating=True
+        aspect_to_star_counts: dict,
+            aspect -> star_counts
+                star_counts: dict, star -> count
+            apply when plot_rating=True
     """
     stats_sample = list(soliconfig_to_stats.values())[0]
     answer_to_goal_stats = partition_goal_by_answer(soliconfig_to_stats)
-
     answer_count = len(answer_to_goal_stats)
     metric_count = len(stats_sample.poll_to_report[1].metrics())
 
@@ -34,26 +44,26 @@ def plot_sim_stats(soliconfig_to_stats,
     h_unit_count = uncertainty_h_unit + rating_h_unit \
         if plot_rating else uncertainty_h_unit
     fig = plt.figure(figsize=(fig_w, h_unit_count * subplt_fig_h))
-
     if plot_rating:
         gs = gridspec.GridSpec(
                 2, 1, hspace=0.1,
                 height_ratios=[uncertainty_h_unit, rating_h_unit])
     else:
         gs = gridspec.GridSpec(1, 1)
+
+    # Plot uncertainties over polls
     gs0 = gridspec.GridSpecFromSubplotSpec(uncertainty_row_count,
                                            uncertainty_col_count,
                                            subplot_spec=gs[0])
-    uncertainty_axarr = [
-            plt.subplot(gs0[plt_id // uncertainty_col_count,
-                            plt_id % uncertainty_col_count])
-            for plt_id in range(metric_count * answer_count)
-            ]
+    uncertainty_axarr = [plt.subplot(gs0[plt_id // uncertainty_col_count,
+                                     plt_id % uncertainty_col_count])
+                         for plt_id in range(metric_count * answer_count)]
     plot_pick_answer_goals(uncertainty_axarr, soliconfig_to_stats,
-                           answer_count=answer_count)
+                           poll=poll, answer_count=answer_count)
 
-    rating_row_id = 0
+    # Plot dataset rating and ratings after simulation
     if plot_rating:
+        rating_row_id = 0
         gs1 = gridspec.GridSpecFromSubplotSpec(rating_row_count, 1,
                                                hspace=0.4,
                                                subplot_spec=gs[1])
@@ -76,7 +86,7 @@ def plot_sim_stats(soliconfig_to_stats,
 
 
 def plot_pick_answer_goals(axarr, soliconfig_to_stats,
-                           answer_count=2, poll_max=100):
+                           answer_count=2, poll=100):
     """
     Args:
         axarr: list of Axes
@@ -87,7 +97,7 @@ def plot_pick_answer_goals(axarr, soliconfig_to_stats,
     metrics = stats_sample.poll_to_report[1].metrics()
     answer_to_goal_stats = partition_goal_by_answer(soliconfig_to_stats)
 
-    X = list(stats_sample.polls)[0:poll_max]
+    X = list(stats_sample.polls)[0:poll]
     subpl_idx = 0
     for metric_idx, metric in enumerate(metrics):
         for answer, soliconfig_to_stats in answer_to_goal_stats.items():
@@ -95,7 +105,7 @@ def plot_pick_answer_goals(axarr, soliconfig_to_stats,
             for goal, stats in soliconfig_to_stats.items():
                 ax = axarr[subpl_idx]
                 Y = [report.get_uncertainty_total(metric)
-                     for report in stats.uncertainty_reports[0:poll_max]]
+                     for report in stats.uncertainty_reports[0:poll]]
                 ax.plot(X, Y, label=goal.pick_goal_str())
 
                 ax.set_title('Cost change over polls ({})'.format(answer))
