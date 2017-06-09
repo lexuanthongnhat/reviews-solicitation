@@ -1,5 +1,4 @@
 from collections import OrderedDict
-import math
 
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
@@ -8,7 +7,7 @@ import numpy as np
 
 
 def plot_sim_stats(soliconfig_to_stats,
-                   poll=100, fig_w=16, subplt_fig_h=6, plot_rating=True,
+                   poll=100, fig_w=16, subplt_fig_h=5, plot_rating=True,
                    product=None, aspect_to_star_counts=None):
     """Plot a product's rating distribution and simulation result statistics.
     Args:
@@ -34,12 +33,11 @@ def plot_sim_stats(soliconfig_to_stats,
 
     # grid layout of 2 plot types
     uncertainty_col_count = 2
-    uncertainty_row_count = math.ceil(
-            metric_count / uncertainty_col_count * answer_count)
+    uncertainty_row_count = metric_count * answer_count
     rating_row_count = answer_count + 3   # 3: std, violin, bar plots
     uncertainty_rating_subplt_ratio = 2
 
-    uncertainty_h_unit = uncertainty_col_count
+    uncertainty_h_unit = uncertainty_row_count
     rating_h_unit = rating_row_count / uncertainty_rating_subplt_ratio
     h_unit_count = uncertainty_h_unit + rating_h_unit \
         if plot_rating else uncertainty_h_unit
@@ -55,9 +53,9 @@ def plot_sim_stats(soliconfig_to_stats,
     gs0 = gridspec.GridSpecFromSubplotSpec(uncertainty_row_count,
                                            uncertainty_col_count,
                                            subplot_spec=gs[0])
-    uncertainty_axarr = [plt.subplot(gs0[plt_id // uncertainty_col_count,
-                                     plt_id % uncertainty_col_count])
-                         for plt_id in range(metric_count * answer_count)]
+    uncertainty_axarr = [plt.subplot(gs0[row_id, col_id])
+                         for row_id in range(uncertainty_row_count)
+                         for col_id in range(uncertainty_col_count)]
     plot_pick_answer_goals(uncertainty_axarr, soliconfig_to_stats,
                            poll=poll, answer_count=answer_count)
 
@@ -86,7 +84,8 @@ def plot_sim_stats(soliconfig_to_stats,
 
 
 def plot_pick_answer_goals(axarr, soliconfig_to_stats,
-                           answer_count=2, poll=100):
+                           answer_count=2, poll=100,
+                           uncertainty_poll_step=5, std_poll_step=10):
     """
     Args:
         axarr: list of Axes
@@ -101,17 +100,29 @@ def plot_pick_answer_goals(axarr, soliconfig_to_stats,
     subpl_idx = 0
     for metric_idx, metric in enumerate(metrics):
         for answer, soliconfig_to_stats in answer_to_goal_stats.items():
-            # each goal is plotted by a curve
             for goal, stats in soliconfig_to_stats.items():
+                reports = stats.uncertainty_reports[0:poll]
+                # Plot uncertainty result
                 ax = axarr[subpl_idx]
                 Y = [report.get_uncertainty_total(metric)
-                     for report in stats.uncertainty_reports[0:poll]]
-                ax.plot(X, Y, label=goal.pick_goal_str())
+                     for report in reports]
+                ax.plot(X[::uncertainty_poll_step], Y[::uncertainty_poll_step],
+                        label=goal.pick_goal_str())
 
                 ax.set_title('Cost change over polls ({})'.format(answer))
                 ax.set_ylabel(str(metric))
-                ax.legend(loc='upper right')
-            subpl_idx += 1
+
+                # Plot standard deviation
+                ax_std = axarr[subpl_idx + 1]
+                Y_std = [report.metric_to_std[metric] for report in reports]
+                ax_std.plot(X[::std_poll_step], Y_std[::std_poll_step],
+                            label=goal.pick_goal_str())
+                ax_std.set_title('Std change over polls ({})'.format(answer))
+                ax_std.set_ylabel("Standard Deviation")
+            subpl_idx += 2
+
+    for ax in axarr:
+        ax.legend(loc='upper right')
 
 
 def partition_goal_by_answer(goal_to_value):

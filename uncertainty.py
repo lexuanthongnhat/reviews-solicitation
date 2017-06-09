@@ -292,13 +292,18 @@ class UncertaintyReport(object):
 
     def __init__(self,
                  metric_to_total=OrderedDict(),
+                 metric_to_std=OrderedDict(),
                  ratings=None,
                  criterion_to_uncertainties=None,
                  correlations=None):
         """Uncertainty Report at a specific point of simulation.
 
         Attributes:
-            metric_to_total: dict, metric -> uncertainty total of all features
+            metric_to_total: dict
+                metric -> uncertainty total of all features
+            metric_to_std: dict
+                metric -> standard deviation of different uncertainty totals
+                over multiple experimental runs
             ratings: 2-d np array,
                 ratings of all features, from UncertaintyBook.ratings
             criterion_to_uncertainties: dict,
@@ -309,6 +314,7 @@ class UncertaintyReport(object):
             correlations: 2-d np array,
         """
         self.metric_to_total = metric_to_total
+        self.metric_to_std = metric_to_std
         self.ratings = ratings
         self.criterion_to_uncertainties = criterion_to_uncertainties
         self.correlations = correlations
@@ -356,11 +362,12 @@ class UncertaintyReport(object):
                     cor_uncertainties = correlated_uncertainty(
                             indept_uncertainties, self.correlations)
 
-                self.metric_to_total[metric] = cor_uncertainties.sum()
+                self.metric_to_totae[metric] = cor_uncertainties.sum()
 
     @classmethod
     def average_reports(cls, reports, ignore_rating=False):
         """Average multiple UncertaintyReport.
+        Reports can be from different products.
 
         Args:
             reports: list of UncertaintyReport
@@ -370,19 +377,25 @@ class UncertaintyReport(object):
         if not reports or len(reports) < 1:
             raise ValueError('Empty reports')
 
-        metric_to_uncertainty_total_average = OrderedDict()
+        metric_to_total_average = OrderedDict()
+        metric_to_std = OrderedDict()
         for metric in reports[0].metrics():
-            metric_to_uncertainty_total_average[metric] = sum(
-                    [report.get_uncertainty_total(metric)
-                     for report in reports])
-            metric_to_uncertainty_total_average[metric] /= len(reports)
+            uncrtnty_totals = np.array([report.get_uncertainty_total(metric)
+                                        for report in reports])
+            metric_to_total_average[metric] = np.average(uncrtnty_totals)
+
+            # Standard Deviation of different products should be just averaged
+            if reports[0].metric_to_std:
+                metric_to_std[metric] = np.average(np.array(
+                    [report.metric_to_std[metric] for report in reports]))
 
         ratings_average = None
         if not ignore_rating:
             ratings_average = sum([report.ratings for report in reports])
             ratings_average = ratings_average / len(reports)
 
-        return cls(metric_to_total=metric_to_uncertainty_total_average,
+        return cls(metric_to_total=metric_to_total_average,
+                   metric_to_std=metric_to_std,
                    ratings=ratings_average)
 
     @classmethod
@@ -393,12 +406,19 @@ class UncertaintyReport(object):
         Args:
             reports: list of UncertaintyReport
         """
+        report_count = len(reports)
         report_average = cls.average_reports(reports)
+
+        # Standard deviation of multiple runs
+        for metric in reports[0].metrics():
+            uncrtnty_totals = np.array([report.get_uncertainty_total(metric)
+                                        for report in reports])
+            report_average.metric_to_std[metric] = np.std(uncrtnty_totals)
 
         cor_average = None
         if reports and reports[0].correlations:
             cor_average = sum([report.correlations for report in reports])
-            cor_average = cor_average / len(reports)
+            cor_average = cor_average / report_count
 
         criterion_to_uncertainties_average = defaultdict(int)
         for report in reports:
@@ -408,7 +428,7 @@ class UncertaintyReport(object):
         for criterion, uncertainties in \
                 criterion_to_uncertainties_average.items():
             criterion_to_uncertainties_average[criterion] = \
-                    uncertainties / len(reports)
+                    uncertainties / report_count
 
         report_average.correlations = cor_average
         report_average.criterion_to_uncertainties = \
