@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import seaborn as sns
 import numpy as np
+import pandas as pd
 
 
 def plot_sim_stats(soliconfig_to_stats,
@@ -53,11 +54,17 @@ def plot_sim_stats(soliconfig_to_stats,
     gs0 = gridspec.GridSpecFromSubplotSpec(uncertainty_row_count,
                                            uncertainty_col_count,
                                            subplot_spec=gs[0])
-    uncertainty_axarr = [plt.subplot(gs0[row_id, col_id])
-                         for row_id in range(uncertainty_row_count)
-                         for col_id in range(uncertainty_col_count)]
-    plot_pick_answer_goals(uncertainty_axarr, soliconfig_to_stats,
-                           poll=poll, answer_count=answer_count)
+
+    for i, answer in enumerate(answer_to_goal_stats.keys()):
+        offset = metric_count * i
+        uncertainty_axarr = [plt.subplot(gs0[row_id + offset, col_id])
+                             for row_id in range(metric_count)
+                             for col_id in range(uncertainty_col_count)]
+        plot_pick_answer_goals(uncertainty_axarr, soliconfig_to_stats,
+                               poll=poll, answer=answer)
+        export_pick_answer_goals(soliconfig_to_stats,
+                                 poll=poll, answer=answer,
+                                 filename=product if product else "overall")
 
     # Plot dataset rating and ratings after simulation
     if plot_rating:
@@ -83,8 +90,55 @@ def plot_sim_stats(soliconfig_to_stats,
     return fig
 
 
+def export_pick_answer_goals(soliconfig_to_stats,
+                             answer="answer_by_gen", poll=100,
+                             filename=None):
+    """
+    Args:
+        axarr: list of Axes
+            Each axes is a subplot of a SoliConfig
+        soliconfig_to_stats: SoliConfig -> SimulationStats
+    """
+    stats_sample = list(soliconfig_to_stats.values())[0]
+    metrics = stats_sample.poll_to_report[1].metrics()
+    metric_answer_to_df = OrderedDict()
+
+    for metric in metrics:
+        goal_to_totals = OrderedDict()
+        baselines = []
+        for goal, stats in soliconfig_to_stats.items():
+            goal_str = goal.pick_goal_str()
+            if goal.baseline:
+                reports = stats.uncertainty_reports[0:poll]
+                goal_to_totals[goal_str] = [
+                        report.get_uncertainty_total(metric)
+                        for report in reports]
+                df = pd.DataFrame(goal_to_totals)
+                baselines.append(goal_str)
+
+        for goal, stats in soliconfig_to_stats.items():
+            goal_str = goal.pick_goal_str()
+            reports = stats.uncertainty_reports[0:poll]
+            totals = [report.get_uncertainty_total(metric)
+                      for report in reports]
+
+            if not goal.baseline:
+                df[goal_str] = totals
+                for baseline in baselines:
+                    df[goal_str + " / " + baseline] = (
+                            1 - df[goal_str] / df[baseline]) * 100
+
+        metric_answer_to_df[str(metric)] = df
+
+    filepath = "output/" + filename + "_" + answer + ".xlsx"
+    with pd.ExcelWriter(filepath) as writer:
+        for sheetname, df in metric_answer_to_df.items():
+            df.to_excel(writer, sheet_name=sheetname[:31],
+                        float_format="%.2f", freeze_panes=(1, 1))
+
+
 def plot_pick_answer_goals(axarr, soliconfig_to_stats,
-                           answer_count=2, poll=100,
+                           answer="answer_by_gen", poll=100,
                            uncertainty_poll_step=5, std_poll_step=10):
     """
     Args:
@@ -94,32 +148,28 @@ def plot_pick_answer_goals(axarr, soliconfig_to_stats,
     """
     stats_sample = list(soliconfig_to_stats.values())[0]
     metrics = stats_sample.poll_to_report[1].metrics()
-    answer_to_goal_stats = partition_goal_by_answer(soliconfig_to_stats)
 
     X = list(stats_sample.polls)[0:poll]
-    subpl_idx = 0
     for metric_idx, metric in enumerate(metrics):
-        for answer, soliconfig_to_stats in answer_to_goal_stats.items():
-            for goal, stats in soliconfig_to_stats.items():
-                reports = stats.uncertainty_reports[0:poll]
-                # Plot uncertainty result
-                ax = axarr[subpl_idx]
-                Y = [report.get_uncertainty_total(metric)
-                     for report in reports]
-                ax.plot(X[::uncertainty_poll_step], Y[::uncertainty_poll_step],
+        for goal, stats in soliconfig_to_stats.items():
+            goal_str = goal.pick_goal_str()
+            reports = stats.uncertainty_reports[0:poll]
+            # Plot uncertainty result
+            ax = axarr[metric_idx * 2]
+            Y = [report.get_uncertainty_total(metric) for report in reports]
+            ax.plot(X[::uncertainty_poll_step], Y[::uncertainty_poll_step],
+                    label=goal_str)
+
+            ax.set_title('Cost change over polls ({})'.format(answer))
+            ax.set_ylabel(str(metric))
+
+            # Plot standard deviation
+            ax_std = axarr[metric_idx * 2 + 1]
+            Y_std = [report.metric_to_std[metric] for report in reports]
+            ax_std.plot(X[::std_poll_step], Y_std[::std_poll_step],
                         label=goal.pick_goal_str())
-
-                ax.set_title('Cost change over polls ({})'.format(answer))
-                ax.set_ylabel(str(metric))
-
-                # Plot standard deviation
-                ax_std = axarr[subpl_idx + 1]
-                Y_std = [report.metric_to_std[metric] for report in reports]
-                ax_std.plot(X[::std_poll_step], Y_std[::std_poll_step],
-                            label=goal.pick_goal_str())
-                ax_std.set_title('Std change over polls ({})'.format(answer))
-                ax_std.set_ylabel("Standard Deviation")
-            subpl_idx += 2
+            ax_std.set_title('Std change over polls ({})'.format(answer))
+            ax_std.set_ylabel("Standard Deviation")
 
     for ax in axarr:
         ax.legend(loc='upper right')

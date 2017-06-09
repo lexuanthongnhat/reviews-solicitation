@@ -17,10 +17,11 @@ class SoliConfig(object):
         answer: str, func name of answering method
         optm_goal: uncertainty.UncertaintyMetric
     """
-    def __init__(self, pick, answer, optm_goal=None):
+    def __init__(self, pick, answer, optm_goal=None, baseline=False):
         self.pick = pick
         self.answer = answer
         self.optm_goal = optm_goal
+        self.baseline = baseline
 
     @classmethod
     def build(cls,
@@ -38,7 +39,7 @@ class SoliConfig(object):
 
         pick_baselines = ['pick_random', 'pick_least_count']
         for pick, answer in itertools.product(pick_baselines, answer_mths):
-            configs.append(cls(pick, answer))
+            configs.append(cls(pick, answer, baseline=True))
 
         for pick, answer, goal in itertools.product(pick_mths, answer_mths,
                                                     optm_goals):
