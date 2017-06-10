@@ -270,7 +270,7 @@ def plot_aspect_star_counts(ax, product, aspect_to_star_counts):
     ax.set_xticks(X_mid)
     ax.set_xticklabels(aspects)
     ax.legend(loc='upper right')
-    ax.set_ylabel('# Ratings (normalized)')
+    ax.set_ylabel('# Ratings')
 
 
 def plot_aspect_rating_dist(axarr, product, aspect_to_star_counts):

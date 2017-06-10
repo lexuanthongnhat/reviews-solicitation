@@ -13,6 +13,7 @@ from reviews_soli import SimulationStats, SoliConfig
 from edmunds import EdmundsReview, EdmundsReviewSolicitation
 from bliu import BliuReview, BliuReviewSolicitation
 from semeval import SemevalReview, SemevalReviewSolicitation
+from synthetic import SyntheticReview, SyntheticReviewSolicitation
 from uncertainty import UncertaintyMetric
 
 
@@ -24,43 +25,38 @@ logger.addHandler(ch)
 
 
 dataset_simulators = {
-    'edmunds': (5, EdmundsReview, EdmundsReviewSolicitation),
-    'bliu': (6, BliuReview, BliuReviewSolicitation),
-    'semeval': (3, SemevalReview, SemevalReviewSolicitation)
+    "edmunds": (5, EdmundsReview, EdmundsReviewSolicitation),
+    "bliu": (6, BliuReview, BliuReviewSolicitation),
+    "semeval": (3, SemevalReview, SemevalReviewSolicitation),
+    "synthetic": (10, SyntheticReview, SyntheticReviewSolicitation)
 }
 
 
 class Scenario(object):
     __scenarios = {}
 
-    def __init__(self, name, soli_configs, metrics):
+    def __init__(self, name, soli_configs, metrics,
+                 product_to_reviews=None):
         self.name = name
         self.soli_configs = soli_configs
         self.metrics = metrics
+        self.product_to_reviews = product_to_reviews
 
     @classmethod
     def build(cls, name):
-        if name == "2goals_3metrics":
+        if name == "basic":
             if name not in cls.__scenarios:
                 soli_configs = SoliConfig.build(
                     pick_mths=['pick_highest'],
                     answer_mths=['answer_by_gen'],
                     optm_goals=[
                                 UncertaintyMetric('expected_rating_var'),
-                                UncertaintyMetric('distribution_change'),
-                                # UncertaintyMetric('var_change'),
                                 ]
                     )
                 metrics = [
                            UncertaintyMetric('expected_rating_var'),
                            UncertaintyMetric('expected_rating_var',
                                              aggregate=np.average),
-                           UncertaintyMetric('distribution_change'),
-                           UncertaintyMetric('distribution_change',
-                                             aggregate=np.average),
-                           # UncertaintyMetric('var_change'),
-                           # UncertaintyMetric('var_change',
-                           #                   aggregate=np.average),
                            UncertaintyMetric('confidence_interval_len'),
                            UncertaintyMetric('confidence_interval_len',
                                              aggregate=np.average)
@@ -68,6 +64,15 @@ class Scenario(object):
                 cls.__scenarios[name] = cls(name, soli_configs, metrics)
 
             return cls.__scenarios[name]
+        elif name == "synthetic":
+            scenario = cls.build("basic")
+
+            FEATURE_COUNT = 2
+            STAR_RANK = 20
+            scenario.product_to_reviews = SyntheticReview.import_dataset(
+                    "fake", star_rank=STAR_RANK, feature_count=FEATURE_COUNT)
+            scenario.star_rank = STAR_RANK
+            return scenario
         else:
             return None
 
@@ -216,16 +221,21 @@ def start_sim(args):
         args: Namespace object, return by ArgumentParser.parse_args()
     """
     star_rank, review_cls, _ = dataset_simulators[args.dataset]
-    product_to_reviews = review_cls.import_dataset(args.input,
-                                                   star_rank=star_rank,
-                                                   duplicate=args.duplicate)
+
+    scenario = Scenario.build(args.scenario)
+    if scenario.product_to_reviews:
+        product_to_reviews = scenario.product_to_reviews
+        star_rank = scenario.star_rank
+    else:
+        product_to_reviews = review_cls.import_dataset(
+                args.input, star_rank=star_rank, duplicate=args.duplicate)
 
     dataset_profile = Review.probe_dataset(product_to_reviews)
     logger.info('Number of products: {}'.format(dataset_profile.product_count))
 
     product_to_config_stats = simulate_reviews_soli(
             product_to_reviews,
-            Scenario.build(args.scenario),
+            scenario,
             star_rank=star_rank,
             dataset=args.dataset,
             poll_count=args.poll_count,
@@ -246,8 +256,8 @@ if __name__ == '__main__':
             "--dataset", default="edmunds",
             help="Dataset name (default='edmunds')")
     parser.add_argument(
-            "--scenario", default="2goals_3metrics",
-            help="Experiment scenario (default='2goals_3metrics')")
+            "--scenario", default="basic",
+            help="Experiment scenario (default='basic')")
     parser.add_argument(
             "--poll-count", type=int, default=-1,
             help="Number of polls (customers) to ask (default=-1, i.e. number "
