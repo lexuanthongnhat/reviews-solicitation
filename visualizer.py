@@ -7,6 +7,18 @@ import numpy as np
 import pandas as pd
 
 
+sns.set_style("darkgrid")
+sns.despine()
+palette = sns.color_palette()
+hatches = ["/", "'", "|", "-", "+", "x", "o", "O", ".", "*"]
+markers = ['o', 'v', '+', 'x', 'P',
+           '1', '2', '3', '4',
+           '^', '<', '>', 's', 'p', '*',
+           'h', 'H', 'd', 'D']
+markersize = 10
+linewidth = 3
+
+
 def plot_sim_stats(soliconfig_to_stats,
                    poll=100, fig_w=16, subplt_fig_h=5, plot_rating=True,
                    product=None, aspect_to_star_counts=None):
@@ -36,7 +48,7 @@ def plot_sim_stats(soliconfig_to_stats,
     uncertainty_col_count = 2
     uncertainty_row_count = metric_count * answer_count
     rating_row_count = answer_count + 3   # 3: std, violin, bar plots
-    uncertainty_rating_subplt_ratio = 2
+    uncertainty_rating_subplt_ratio = 1.6
 
     uncertainty_h_unit = uncertainty_row_count
     rating_h_unit = rating_row_count / uncertainty_rating_subplt_ratio
@@ -46,14 +58,43 @@ def plot_sim_stats(soliconfig_to_stats,
     if plot_rating:
         gs = gridspec.GridSpec(
                 2, 1, hspace=0.1,
-                height_ratios=[uncertainty_h_unit, rating_h_unit])
+                height_ratios=[rating_h_unit, uncertainty_h_unit])
     else:
         gs = gridspec.GridSpec(1, 1)
+
+    # Plot dataset rating and ratings after simulation
+    if plot_rating:
+        aspect_to_raw_stars = get_raw_stars(aspect_to_star_counts)
+        aspect_to_raw_stars = OrderedDict(
+            sorted(aspect_to_raw_stars.items(), key=lambda kv: np.std(kv[1])))
+        aspects = list(aspect_to_raw_stars.keys())
+
+        rating_row_id = 0
+        gs1 = gridspec.GridSpecFromSubplotSpec(rating_row_count, 1,
+                                               hspace=0.4,
+                                               subplot_spec=gs[0])
+
+        ax = plt.subplot(gs1[rating_row_id, :])
+        aspect_to_star_counts = OrderedDict([
+            (aspect, aspect_to_star_counts[aspect]) for aspect in aspects])
+        plot_aspect_star_counts(ax, product, aspect_to_star_counts)
+        rating_row_id += 1
+
+        axarr = [plt.subplot(gs1[rating_row_id, :]),
+                 plt.subplot(gs1[rating_row_id + 1, :])]
+        plot_aspect_rating_dist(axarr, product, aspect_to_raw_stars)
+        rating_row_id += 2
+
+        axarr = [plt.subplot(gs1[rating_row_id + i, :])
+                 for i in range(answer_count)]
+        plot_picked_features(axarr, soliconfig_to_stats,
+                             answer_count=answer_count, poll=poll,
+                             sorted_features=aspects)
 
     # Plot uncertainties over polls
     gs0 = gridspec.GridSpecFromSubplotSpec(uncertainty_row_count,
                                            uncertainty_col_count,
-                                           subplot_spec=gs[0])
+                                           subplot_spec=gs[1])
 
     for i, answer in enumerate(answer_to_goal_stats.keys()):
         offset = metric_count * i
@@ -65,27 +106,6 @@ def plot_sim_stats(soliconfig_to_stats,
         export_pick_answer_goals(soliconfig_to_stats,
                                  poll=poll, answer=answer,
                                  filename=product if product else "overall")
-
-    # Plot dataset rating and ratings after simulation
-    if plot_rating:
-        rating_row_id = 0
-        gs1 = gridspec.GridSpecFromSubplotSpec(rating_row_count, 1,
-                                               hspace=0.4,
-                                               subplot_spec=gs[1])
-        axarr = [plt.subplot(gs1[rating_row_id + i, :])
-                 for i in range(answer_count)]
-        plot_picked_features(axarr, soliconfig_to_stats,
-                             answer_count=answer_count, poll=poll)
-
-        rating_row_id += answer_count
-        axarr = [plt.subplot(gs1[rating_row_id, :]),
-                 plt.subplot(gs1[rating_row_id + 1, :])]
-        plot_aspect_rating_dist(axarr, product, aspect_to_star_counts)
-
-        rating_row_id += 2
-        ax = plt.subplot(gs1[rating_row_id, :])
-        plot_aspect_star_counts(ax, product, aspect_to_star_counts)
-
     plt.show()
     return fig
 
@@ -191,51 +211,59 @@ def partition_goal_by_answer(goal_to_value):
     return answer_to_goal_values
 
 
-def plot_picked_features(axarr, soliconfig_to_stats, answer_count=2, poll=100):
+def plot_picked_features(axarr, soliconfig_to_stats,
+                         answer_count=2, poll=100, sorted_features=None):
     """Bar plot of different methods' ratings at a specific poll.
 
     Args:
+        axarr: list of Axes to draw
         soliconfig_to_stats_average: dict,
             soliconfig (SoliConfig) -> SimulationStats
         answer_count: int, default=2,
             Number of answer options in SoliConfig of the input
         poll: int, default=100,
-        fig_w: int, default=10
-            figure width
+        sorted_features: list of str
     """
     features = list(soliconfig_to_stats.values())[0].features
-    features = sorted(features, key=lambda f: f.name)
+    if not sorted_features:
+        features = sorted(features, key=lambda f: f.name)
+    features = sorted(features, key=lambda f: sorted_features.index(f.name))
+
     configs = list(soliconfig_to_stats.keys())
-    X = np.arange(len(features))
+    X = np.arange(len(sorted_features))
 
     answer_to_goal_stats = partition_goal_by_answer(soliconfig_to_stats)
+    width = 1 / (len(configs) + 1)
     subpl_idx = 0
     for answer, goal_to_stats in answer_to_goal_stats.items():
-        feature_to_per_config_counts = get_aspect_picked_counts(goal_to_stats,
-                                                                poll=poll)
+        feature_to_per_config_counts = get_aspect_picked_counts(
+                goal_to_stats, features, poll=poll)
         ax = axarr[subpl_idx]
-        # plot each goal's stats by a set of horizontal bars
         for i, config in enumerate(configs):
+            X_left = X + (i + 0.1) * width
             Y = [config_to_count[config]
                  for config_to_count in feature_to_per_config_counts.values()]
-            ax.plot(X, Y, label=config.pick_goal_str())
+            ax.bar(X_left, Y, width, label=config.pick_goal_str(),
+                   fill=True, color=palette[i], alpha=0.5)
+            ax.plot(X_left, Y,
+                    linewidth=linewidth, marker=markers[i],
+                    ms=markersize, markeredgewidth=3, color=palette[i])
 
-        ax.set_xticks(X)
+        X_mid = X + (len(configs) - 1) / 2 * width
+        ax.set_xticks(X_mid)
         ax.set_xticklabels([feature.name for feature in features])
         ax.set_title("Rating count after {} polls ({})".format(poll, answer))
         ax.set_ylabel("# Ratings")
-        ax.legend(loc='upper right')
+        ax.legend(loc='upper left', ncol=5)
         subpl_idx += 1
 
 
-def get_aspect_picked_counts(soliconfig_to_stats, poll=100):
+def get_aspect_picked_counts(soliconfig_to_stats, sorted_features, poll=100):
     feature_to_per_config_counts = OrderedDict()
 
-    features = list(soliconfig_to_stats.values())[0].features
-    features = sorted(features, key=lambda f: f.name)
     config_to_ratings = {config: stats.poll_to_report[poll - 1].ratings
                          for config, stats in soliconfig_to_stats.items()}
-    for feature in features:
+    for feature in sorted_features:
         feature_to_per_config_counts[feature] = {
                 config: np.sum(ratings[feature.idx, :])
                 for config, ratings in config_to_ratings.items()}
@@ -253,8 +281,6 @@ def plot_aspect_star_counts(ax, product, aspect_to_star_counts):
             aspect -> star_counts
                 star_counts: dict, star -> count
     """
-    aspect_to_star_counts = OrderedDict(
-            sorted(aspect_to_star_counts.items(), key=lambda kv: kv[0]))
     star_rank = max([max(star_counts.keys())
                      for star_counts in aspect_to_star_counts.values()])
     aspects = list(aspect_to_star_counts.keys())
@@ -269,11 +295,12 @@ def plot_aspect_star_counts(ax, product, aspect_to_star_counts):
     X_mid = X + (star_rank - 1) / 2 * width
     ax.set_xticks(X_mid)
     ax.set_xticklabels(aspects)
-    ax.legend(loc='upper right')
+    ax.legend(loc='upper center', ncol=5)
     ax.set_ylabel('# Ratings')
+    ax.set_title("Dataset profile: rating count (used in generator)")
 
 
-def plot_aspect_rating_dist(axarr, product, aspect_to_star_counts):
+def plot_aspect_rating_dist(axarr, product, aspect_to_raw_stars):
     """Bar plot of normalized rating distribution of a single product.
 
     Args:
@@ -284,25 +311,34 @@ def plot_aspect_rating_dist(axarr, product, aspect_to_star_counts):
             aspect -> star_counts
                 star_counts: dict, star -> count
     """
-    aspect_to_star_counts = OrderedDict(
-            sorted(aspect_to_star_counts.items(), key=lambda kv: kv[0]))
-
-    aspects = list(aspect_to_star_counts.keys())
-    aspect_to_raw_stars = get_raw_stars(aspect_to_star_counts)
+    aspects = list(aspect_to_raw_stars.keys())
     raw_stars = [np.array(stars) for stars in aspect_to_raw_stars.values()]
 
     X = np.arange(len(aspects)) + 1
-    aspect_stds = [np.std(stars) for stars in aspect_to_raw_stars.values()]
+    ax_violin, ax_std = axarr
 
-    ax_std, ax_violin = axarr
-    ax_std.plot(X, aspect_stds)
-    ax_std.set_ylabel("Standard Deviation")
-    ax_std.set_title("Dataset's rating distribution (used in generator)")
-    for x, std in zip(X, aspect_stds):
-        ax_std.annotate("{:.2f}".format(std), xy=(x, std + 0.05), ha="center")
-
+    # Violin plot for estimating distribution shape
     ax_violin.violinplot(raw_stars, showmeans=True)
     ax_violin.set_ylabel("Star")
+    ax_violin.set_title(
+            "Dataset profile: rating distribution (used in generator)")
+
+    # Standard Deviation of ratings
+    aspect_stds = [np.std(stars) for stars in aspect_to_raw_stars.values()]
+    ax_std.plot(X, aspect_stds,
+                linewidth=linewidth, marker=markers[-1],
+                ms=markersize, color=palette[-1])
+    rects = ax_std.bar(X, aspect_stds,
+                       alpha=0.5, color=palette[-1])
+    for rect, std in zip(rects, aspect_stds):
+        ax_std.text(rect.get_x() + rect.get_width() / 2,
+                    1.03 * rect.get_height(),
+                    "{:.2f}".format(std), ha="center", va="bottom")
+    ax_std.set_xticks(X)
+    ax_std.set_xticklabels(aspects)
+    ax_std.set_ylabel("Standard Deviation")
+    ax_std.set_title("Dataset profile: rating variance (used in generator)")
+
     plt.setp(axarr, xticks=X, xticklabels=aspects)
 
 

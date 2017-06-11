@@ -26,7 +26,7 @@ class SyntheticReview(Review):
 
         alpha_betas = np.array([
             [0.1, 0.1], [50, 1], [3, 0.5], [0.2, 0.25], [6, 0.4],
-            [100, 100], [8, 0.2], [0.1, 0.7], [0.1, 10], [20, 20]
+            [8, 0.2], [0.1, 0.7], [0.1, 10], [20, 20]
             ])
         for i in range(feature_count):
             feature = "feature_" + str(i)

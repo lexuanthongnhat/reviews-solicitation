@@ -51,6 +51,7 @@ class Scenario(object):
                     answer_mths=['answer_by_gen'],
                     optm_goals=[
                                 UncertaintyMetric('expected_rating_var'),
+                                UncertaintyMetric('dirichlet_var_sum'),
                                 ]
                     )
                 metrics = [
@@ -67,8 +68,8 @@ class Scenario(object):
         elif name == "synthetic":
             scenario = cls.build("basic")
 
-            FEATURE_COUNT = 2
-            STAR_RANK = 20
+            FEATURE_COUNT = 6
+            STAR_RANK = 10
             scenario.product_to_reviews = SyntheticReview.import_dataset(
                     "fake", star_rank=STAR_RANK, feature_count=FEATURE_COUNT)
             scenario.star_rank = STAR_RANK
