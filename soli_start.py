@@ -51,7 +51,6 @@ class Scenario(object):
                     answer_mths=['answer_by_gen'],
                     optm_goals=[
                                 UncertaintyMetric('expected_rating_var'),
-                                UncertaintyMetric('dirichlet_var_sum'),
                                 ]
                     )
                 metrics = [
@@ -68,8 +67,8 @@ class Scenario(object):
         elif name == "synthetic":
             scenario = cls.build("basic")
 
-            FEATURE_COUNT = 6
-            STAR_RANK = 10
+            FEATURE_COUNT = 7
+            STAR_RANK = 20
             scenario.product_to_reviews = SyntheticReview.import_dataset(
                     "fake", star_rank=STAR_RANK, feature_count=FEATURE_COUNT)
             scenario.star_rank = STAR_RANK
@@ -248,6 +247,7 @@ def start_sim(args):
 
     with open(args.output, 'wb') as result_file:
         pickle.dump(product_to_config_stats, result_file)
+        logger.info("Pickle to '{}'".format(args.output))
 
 
 if __name__ == '__main__':

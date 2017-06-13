@@ -6,17 +6,19 @@ import seaborn as sns
 import numpy as np
 import pandas as pd
 
+from uncertainty import expected_rating_var
+
 
 sns.set_style("darkgrid")
 sns.despine()
 palette = sns.color_palette()
 hatches = ["/", "'", "|", "-", "+", "x", "o", "O", ".", "*"]
-markers = ['o', 'v', '+', 'x', 'P',
+markers = ['o', '+', 'x', 'P', 'v',
            '1', '2', '3', '4',
            '^', '<', '>', 's', 'p', '*',
            'h', 'H', 'd', 'D']
-markersize = 10
-linewidth = 3
+markersize = 7
+linewidth = 2
 
 
 def plot_sim_stats(soliconfig_to_stats,
@@ -47,7 +49,7 @@ def plot_sim_stats(soliconfig_to_stats,
     # grid layout of 2 plot types
     uncertainty_col_count = 2
     uncertainty_row_count = metric_count * answer_count
-    rating_row_count = answer_count + 3   # 3: std, violin, bar plots
+    rating_row_count = answer_count + 4   # 3: std, violin, bar plots
     uncertainty_rating_subplt_ratio = 1.6
 
     uncertainty_h_unit = uncertainty_row_count
@@ -81,9 +83,11 @@ def plot_sim_stats(soliconfig_to_stats,
         rating_row_id += 1
 
         axarr = [plt.subplot(gs1[rating_row_id, :]),
-                 plt.subplot(gs1[rating_row_id + 1, :])]
-        plot_aspect_rating_dist(axarr, product, aspect_to_raw_stars)
-        rating_row_id += 2
+                 plt.subplot(gs1[rating_row_id + 1, :]),
+                 plt.subplot(gs1[rating_row_id + 2, :])]
+        plot_aspect_rating_dist(axarr, product,
+                aspect_to_star_counts, aspect_to_raw_stars)
+        rating_row_id += 3
 
         axarr = [plt.subplot(gs1[rating_row_id + i, :])
                  for i in range(answer_count)]
@@ -233,28 +237,28 @@ def plot_picked_features(axarr, soliconfig_to_stats,
     X = np.arange(len(sorted_features))
 
     answer_to_goal_stats = partition_goal_by_answer(soliconfig_to_stats)
-    width = 1 / (len(configs) + 1)
     subpl_idx = 0
     for answer, goal_to_stats in answer_to_goal_stats.items():
         feature_to_per_config_counts = get_aspect_picked_counts(
                 goal_to_stats, features, poll=poll)
         ax = axarr[subpl_idx]
+        count_max = 0
+        count_min = float("inf")
         for i, config in enumerate(configs):
-            X_left = X + (i + 0.1) * width
             Y = [config_to_count[config]
                  for config_to_count in feature_to_per_config_counts.values()]
-            ax.bar(X_left, Y, width, label=config.pick_goal_str(),
-                   fill=True, color=palette[i], alpha=0.5)
-            ax.plot(X_left, Y,
-                    linewidth=linewidth, marker=markers[i],
-                    ms=markersize, markeredgewidth=3, color=palette[i])
+            ax.plot(X, Y, label=config.pick_goal_str(),
+                    marker=markers[i], ms=markersize, markeredgewidth=2)
+            count_max = max(count_max, np.max(Y))
+            count_min = min(count_min, np.min(Y))
 
-        X_mid = X + (len(configs) - 1) / 2 * width
-        ax.set_xticks(X_mid)
+        ax.set_xticks(X)
         ax.set_xticklabels([feature.name for feature in features])
-        ax.set_title("Rating count after {} polls ({})".format(poll, answer))
+        ax.set_title("2. Rating count after {} polls ({})".format(
+            poll, answer))
         ax.set_ylabel("# Ratings")
         ax.legend(loc='upper left', ncol=5)
+        ax.set_ylim(count_min * 0.95, count_max * 1.03)
         subpl_idx += 1
 
 
@@ -297,10 +301,11 @@ def plot_aspect_star_counts(ax, product, aspect_to_star_counts):
     ax.set_xticklabels(aspects)
     ax.legend(loc='upper center', ncol=5)
     ax.set_ylabel('# Ratings')
-    ax.set_title("Dataset profile: rating count (used in generator)")
+    ax.set_title("1a. Dataset profile: rating count (used in generator)")
 
 
-def plot_aspect_rating_dist(axarr, product, aspect_to_raw_stars):
+def plot_aspect_rating_dist(axarr, product,
+        aspect_to_star_counts, aspect_to_raw_stars):
     """Bar plot of normalized rating distribution of a single product.
 
     Args:
@@ -315,29 +320,40 @@ def plot_aspect_rating_dist(axarr, product, aspect_to_raw_stars):
     raw_stars = [np.array(stars) for stars in aspect_to_raw_stars.values()]
 
     X = np.arange(len(aspects)) + 1
-    ax_violin, ax_std = axarr
+    ax_violin, ax_std, ax_erv = axarr
 
     # Violin plot for estimating distribution shape
     ax_violin.violinplot(raw_stars, showmeans=True)
     ax_violin.set_ylabel("Star")
     ax_violin.set_title(
-            "Dataset profile: rating distribution (used in generator)")
+            "1b. Dataset profile: rating distribution (used in generator)")
 
     # Standard Deviation of ratings
     aspect_stds = [np.std(stars) for stars in aspect_to_raw_stars.values()]
-    ax_std.plot(X, aspect_stds,
-                linewidth=linewidth, marker=markers[-1],
-                ms=markersize, color=palette[-1])
-    rects = ax_std.bar(X, aspect_stds,
-                       alpha=0.5, color=palette[-1])
-    for rect, std in zip(rects, aspect_stds):
-        ax_std.text(rect.get_x() + rect.get_width() / 2,
-                    1.03 * rect.get_height(),
-                    "{:.2f}".format(std), ha="center", va="bottom")
-    ax_std.set_xticks(X)
-    ax_std.set_xticklabels(aspects)
+    ax_std.plot(X, aspect_stds, marker=markers[-1], ms=markersize)
+    std_max = np.max(aspect_stds)
+    for x, std in zip(X, aspect_stds):
+        ax_std.annotate("{:.2f}".format(std), xy=(x, std + std_max * 0.01),
+                ha="center")
     ax_std.set_ylabel("Standard Deviation")
-    ax_std.set_title("Dataset profile: rating variance (used in generator)")
+    ax_std.set_title("1c. Dataset profile: Standard Deviation "
+                     "(used in generator)")
+    ax_std.set_ylim(top=std_max * 1.05)
+
+    # Expected Rating Variance
+    aspect_exp_rating_vars = [
+            expected_rating_var(np.array(list(star_counts.values())))
+            for star_counts in aspect_to_star_counts.values()]
+    ax_erv.plot(X, aspect_exp_rating_vars, marker=markers[-1], ms=markersize)
+    erv_max = np.max(aspect_exp_rating_vars)
+    for x, erv in zip(X, aspect_exp_rating_vars):
+        ax_erv.annotate("{:.3f}".format(erv), xy=(x, erv + erv_max * 0.01),
+                ha="center")
+    ax_erv.set_ylabel("Expected Rating Variance")
+    ax_erv.set_title("1d. Dataset profile: Expected Rating Variance by"
+                     " Bayesian (used in generator)")
+    ax_erv.set_ylim(top=erv_max * 1.05)
+
 
     plt.setp(axarr, xticks=X, xticklabels=aspects)
 

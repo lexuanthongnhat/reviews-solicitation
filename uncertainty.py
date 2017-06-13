@@ -808,6 +808,27 @@ class UncertaintyTester(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    rates = np.array([
+        [5, 5, 5, 5, 5],
+        [1, 1, 1, 1, 21]
+        ])
+    raw_stars = []
+    for i in range(rates.shape[0]):
+        counts = rates[i, :]
+        stars = []
+        for i, count in enumerate(counts):
+            stars.extend([i + 1] * count)
+        print("std: {}".format(np.std(stars)))
+        raw_stars.append(stars)
+    print(raw_stars)
+
+    # for i in range(rates.shape[0]):
+        # print("expected_rating_var of {}: {}".format(
+            # i, expected_rating_var(rates[i, :])))
+    print(np.apply_along_axis(expected_rating_var, 1, rates))
+
+
+
     count_tables = []
     for i in range(0, 50, 5):
         count_tables.append(np.array([[i, 0, 0, 0, 0],

@@ -6,6 +6,7 @@ import scipy as sp
 
 from data_model import Review
 from edmunds import EdmundsReviewSolicitation
+from uncertainty import expected_rating_var
 
 
 logger = logging.getLogger(__name__)
@@ -25,16 +26,36 @@ class SyntheticReview(Review):
         reviews = []
 
         alpha_betas = np.array([
-            [0.1, 0.1], [50, 1], [3, 0.5], [0.2, 0.25], [6, 0.4],
-            [8, 0.2], [0.1, 0.7], [0.1, 10], [20, 20]
+            [2, 2], [20, 1],
+            [0.1, 0.1], [100, 1], [3, 60],
+            [0.2, 0.25], [2, 2], [1, 1],
+            [0.1, 0.7], [0.1, 10], [50, 50],
+            [0.01, 0.01]
             ])
+
         for i in range(feature_count):
             feature = "feature_" + str(i)
             cls.seed_features.append(feature)
+
             alpha, beta = alpha_betas[i, :]
             star_dist = np.array([beta_binom_pmf(alpha, beta, star_rank - 1, k)
                                   for k in range(star_rank)])
             star_counts = np.ceil(star_dist * 5 * star_rank)
+
+            if i == 6:
+                # star_counts = np.array([10, 2, 2, 1, 9, 10, 1,  2, 2, 10])
+                star_counts = np.array([10, 2, 2, 1, 9, 11, 1, 2, 2, 10,
+                                        11, 1, 3, 1, 10, 9, 2, 1, 2, 10])
+
+            # Randomize generate
+            # count_total = star_rank * 9
+            # star_counts = np.zeros(star_rank + 1)
+            # star_counts[-1] = count_total
+            # star_counts[1:-1] = np.sort(np.random.randint(
+                # 1, high=count_total, size=star_rank - 1))
+            # star_counts = np.diff(star_counts)
+            # star_counts += 1
+
             for star, count in enumerate(star_counts):
                 feature_to_stars = {feature: [star + 1] * int(count)}
                 review = cls(feature_to_stars, star_rank=star_rank)
@@ -87,6 +108,12 @@ def beta_binom_pmf(alpha, beta, n, k):
     part2 = sp.special.betaln(k + alpha, n - k + beta)
     part3 = sp.special.betaln(alpha, beta)
     return np.exp(part1 + part2 - part3)
+
+
+def beta_binom_var(alpha, beta, n):
+    var = (n * alpha * beta * (alpha + beta + n))
+    var /= (alpha + beta) * (alpha + beta) * (alpha + beta + 1)
+    return var
 
 
 if __name__ == "__main__":
