@@ -85,8 +85,8 @@ def plot_sim_stats(soliconfig_to_stats,
         axarr = [plt.subplot(gs1[rating_row_id, :]),
                  plt.subplot(gs1[rating_row_id + 1, :]),
                  plt.subplot(gs1[rating_row_id + 2, :])]
-        plot_aspect_rating_dist(axarr, product,
-                aspect_to_star_counts, aspect_to_raw_stars)
+        plot_aspect_rating_dist(axarr, product, aspect_to_star_counts,
+                                aspect_to_raw_stars)
         rating_row_id += 3
 
         axarr = [plt.subplot(gs1[rating_row_id + i, :])
@@ -96,9 +96,9 @@ def plot_sim_stats(soliconfig_to_stats,
                              sorted_features=aspects)
 
     # Plot uncertainties over polls
-    gs0 = gridspec.GridSpecFromSubplotSpec(uncertainty_row_count,
-                                           uncertainty_col_count,
-                                           subplot_spec=gs[1])
+    gs0 = gridspec.GridSpecFromSubplotSpec(
+            uncertainty_row_count, uncertainty_col_count,
+            subplot_spec=gs[1] if plot_rating else gs[0])
 
     for i, answer in enumerate(answer_to_goal_stats.keys()):
         offset = metric_count * i
@@ -305,7 +305,7 @@ def plot_aspect_star_counts(ax, product, aspect_to_star_counts):
 
 
 def plot_aspect_rating_dist(axarr, product,
-        aspect_to_star_counts, aspect_to_raw_stars):
+                            aspect_to_star_counts, aspect_to_raw_stars):
     """Bar plot of normalized rating distribution of a single product.
 
     Args:
@@ -334,7 +334,7 @@ def plot_aspect_rating_dist(axarr, product,
     std_max = np.max(aspect_stds)
     for x, std in zip(X, aspect_stds):
         ax_std.annotate("{:.2f}".format(std), xy=(x, std + std_max * 0.01),
-                ha="center")
+                        ha="center")
     ax_std.set_ylabel("Standard Deviation")
     ax_std.set_title("1c. Dataset profile: Standard Deviation "
                      "(used in generator)")
@@ -348,12 +348,11 @@ def plot_aspect_rating_dist(axarr, product,
     erv_max = np.max(aspect_exp_rating_vars)
     for x, erv in zip(X, aspect_exp_rating_vars):
         ax_erv.annotate("{:.3f}".format(erv), xy=(x, erv + erv_max * 0.01),
-                ha="center")
+                        ha="center")
     ax_erv.set_ylabel("Expected Rating Variance")
     ax_erv.set_title("1d. Dataset profile: Expected Rating Variance by"
                      " Bayesian (used in generator)")
     ax_erv.set_ylim(top=erv_max * 1.05)
-
 
     plt.setp(axarr, xticks=X, xticklabels=aspects)
 

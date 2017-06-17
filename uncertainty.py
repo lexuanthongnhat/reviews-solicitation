@@ -139,6 +139,7 @@ class UncertaintyBook(object):
                                    star_rank, star_rank))
 
         self.prev_ratings = np.ones((feature_count, star_rank))
+        self.vars = [[0, 1] for i in range(feature_count)]
 
     def _init_prior(self, dataset_profile):
         self.prior = {}
@@ -191,6 +192,21 @@ class UncertaintyBook(object):
                 self.criterion_to_cache_unc[criterion] = \
                         globals()[criterion](self.ratings, self.prev_ratings)
             indept_uncertainties = self.criterion_to_cache_unc[criterion]
+            return (indept_uncertainties, indept_uncertainties)
+
+        if criterion == "passed_credible_interval":
+            # Count the number of features that have crediable interval width
+            # smaller than a threshold, e.g. 1 star
+            z = 1.96    # 95% confidence
+            width_threshold = self.star_rank / 20
+            base_criterion = "expected_rating_var"
+            if base_criterion not in self.criterion_to_cache_unc:
+                self.criterion_to_cache_unc[base_criterion] = \
+                        np.apply_along_axis(globals()[base_criterion], 1,
+                                            self.ratings)
+            aspect_vars = np.copy(self.criterion_to_cache_unc[base_criterion])
+            credible_intervals_ws = aspect_vars * z
+            indept_uncertainties = credible_intervals_ws <= width_threshold
             return (indept_uncertainties, indept_uncertainties)
 
         if criterion not in self.criterion_to_cache_unc:
@@ -275,6 +291,8 @@ class UncertaintyBook(object):
         self.prev_ratings[feature.idx, :] = \
             np.copy(self.ratings[feature.idx, :])
         self.ratings[feature.idx, star - 1] += count
+        self.vars[feature.idx].append(
+                expected_rating_var(self.ratings[feature.idx]))
 
     def rate_2features(self, feature1, star1, feature2, star2):
         """Update co-rating of 2 features that appear in the same review."""
@@ -577,6 +595,24 @@ def expected_rating_var(ratings):
     return feature_var
 
 
+def plain_expected_rating_var(ratings):
+    """Use formula from:
+    http://www.evanmiller.org/ranking-items-with-star-ratings.html
+    """
+    alphas = np.array(ratings) + 1
+    alpha_0 = alphas.sum()
+    norml_alphas = alphas / alpha_0
+
+    d = alphas.shape[0]
+    stars = np.linspace(1, d, d)
+    part1 = np.sum(stars * stars * norml_alphas)
+    part2 = np.sum(stars * norml_alphas)
+    part2 *= part2
+
+    agg_var = (part1 - part2) / (alpha_0 + 1)
+    return agg_var
+
+
 def pearson_cor_on_flatten(flatten_count_table):
     """Similar to pearson_cor except that the argument is flatten array.
     Args:
@@ -821,13 +857,8 @@ if __name__ == '__main__':
         print("std: {}".format(np.std(stars)))
         raw_stars.append(stars)
     print(raw_stars)
-
-    # for i in range(rates.shape[0]):
-        # print("expected_rating_var of {}: {}".format(
-            # i, expected_rating_var(rates[i, :])))
     print(np.apply_along_axis(expected_rating_var, 1, rates))
-
-
+    print(np.apply_along_axis(plain_expected_rating_var, 1, rates))
 
     count_tables = []
     for i in range(0, 50, 5):
