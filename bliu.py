@@ -89,8 +89,13 @@ class BliuReview(Review):
                     if aspect in eligible_aspects:
                         aspect_to_stars[aspect].append(
                             BLIU_POLARITY_TO_STAR[polarity])
+            ordered_aspects = [aspect
+                               for aspect in anno_review.ordered_aspects
+                               if aspect in eligible_aspects]
             if aspect_to_stars:
-                bliu_reviews.append(cls(aspect_to_stars, star_rank=6))
+                bliu_reviews.append(cls(aspect_to_stars,
+                                        star_rank=6,
+                                        ordered_features=ordered_aspects))
 
         return bliu_reviews
 

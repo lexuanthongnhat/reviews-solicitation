@@ -135,12 +135,34 @@ class EdmundsReviewSolicitation(ReviewsSolicitation):
         answered_review = self.reviews[0]   # earliest review
         answered_star = None
         if picked_feature.name in answered_review.features:
-            answered_star = np.random.choice(
-                    answered_review.feature_to_stars[picked_feature.name])
+            answered_star = \
+                    answered_review.feature_to_stars[picked_feature.name][0]
         self.num_waiting_answers -= 1
 
         if self.num_waiting_answers <= 0:
             self.reviews.pop(0)
+        return answered_star
+
+    def answer_almost_real(self, picked_feature):
+        """Answer using real reviews if possible, otherwise generate answer
+
+        This is a hybrid of answer_in_time_order and answer_by_gen
+        Args:
+            picked_feature: datamodel.Feature, returned by pick_method
+        Returns:
+            answered_star: int
+        """
+        if not picked_feature:
+            self.num_waiting_answers -= 1
+
+            if self.num_waiting_answers <= 0:
+                self.reviews.pop(0)
+            return None
+
+        answered_star = self.answer_in_time_order(picked_feature)
+        if not answered_star:
+            answered_star = self.answer_by_gen(picked_feature)
+
         return answered_star
 
 

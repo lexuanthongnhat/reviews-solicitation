@@ -140,6 +140,10 @@ class ReviewsSolicitation(ABC):
                 answered_star = self.__getattribute__(self.soli_config.answer)(
                         picked_feature)
 
+                # When running out of feature in pick_real method
+                if not picked_feature and not answered_star:
+                    continue
+
                 # In duplicate feature scenario: make sure dup features get
                 # the same star.
                 if self.duplicate and already_picked_idx \
@@ -259,6 +263,33 @@ class ReviewsSolicitation(ABC):
             rating_counts[already_picked_idx] = float('inf')
         min_indices = np.where(rating_counts == rating_counts.min())[0]
         return self.features[np.random.choice(min_indices)]
+
+    def pick_real(self, already_picked_idx):
+        """Pick the first feature in the review (contain sorted features)
+
+        Only use this method with answer method: answer_in_time_order or
+        answer_almost_real. This is because these answer method will remove the
+        first review in the row, thus guarantee having fresh new review to
+        pick each time.
+
+        Args:
+            already_picked_idx: list
+                list of already picked feature indexes
+        Returns:
+            datamodel.Feature
+                return None when running out of new features
+        """
+        # Run out of reviews, re-fetch from original reviews
+        if not self.reviews:
+            self.reviews = self.original_reviews.copy()
+
+        for next_feature_name in self.reviews[0].ordered_features:
+            for feature in self.features:
+                if feature.name == next_feature_name and \
+                        feature.idx not in already_picked_idx:
+                    return feature
+        # No new features
+        return None
 
 
 class SimulationStats(object):

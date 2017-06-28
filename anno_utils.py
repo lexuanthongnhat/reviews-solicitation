@@ -24,12 +24,15 @@ class AnnoReview(object):
             sentence (str) -> tuple of (aspect, polarity)
         aspects: set
             aspects are from polarized_sentences
+        ordered_aspects: list
+            aspects in order appearing in review
     """
     def __init__(self, idx, title):
         self.idx = idx
         self.title = title
         self.polarized_sentences = OrderedDict()
         self.aspects = set([])
+        self.ordered_aspects = []
 
     def add_sentence(self, sentence, polarized_aspects):
         """Add sentence and its aspect, sentiments.
@@ -41,6 +44,7 @@ class AnnoReview(object):
         self.polarized_sentences[sentence] = polarized_aspects
         for aspect, _ in polarized_aspects:
             self.aspects.add(aspect)
+            self.ordered_aspects.append(aspect)
 
     @classmethod
     def aggregate_aspects(cls, anno_reviews):
@@ -65,7 +69,7 @@ def import_bliu_dataset(filepath):
     """
     Returns:
         product, aspect_to_polarity_counts, reviews: tuple
-            product: str, also means product's name
+            product: str, also means product name
             aspect_to_polarity_counts: dict,
                 aspect -> {polarity -> count}
             reviews: list of AnnoReview

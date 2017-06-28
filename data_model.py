@@ -22,11 +22,12 @@ class Review(ABC):
     def dup_scenario_features(self):
         return "Please implement this property!"
 
-    def __init__(self, feature_to_stars, star_rank=5):
+    def __init__(self, feature_to_stars, star_rank=5, ordered_features=None):
         self.feature_to_stars = feature_to_stars
         self.star_rank = star_rank
 
         self.features = self.feature_to_stars.keys()
+        self.ordered_features = ordered_features
 
     def __repr__(self):
         return repr(self.feature_to_stars)

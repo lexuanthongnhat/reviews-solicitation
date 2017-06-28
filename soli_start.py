@@ -49,7 +49,6 @@ class Scenario(object):
                 soli_configs = SoliConfig.build(
                     pick_mths=['pick_highest'],
                     answer_mths=['answer_by_gen'],
-                    # answer_mths=['answer_in_time_order'],
                     optm_goals=[
                                 UncertaintyMetric('expected_rating_var'),
                                 ]
@@ -67,6 +66,23 @@ class Scenario(object):
                 cls.__scenarios[name] = cls(name, soli_configs, metrics)
 
             return cls.__scenarios[name]
+        elif name == "natural_vs_prepared":
+            soli_configs = SoliConfig.build(
+                pick_mths=["pick_highest", "pick_real"],
+                answer_mths=['answer_almost_real'],
+                optm_goals=[
+                            UncertaintyMetric('expected_rating_var'),
+                            ]
+                )
+            metrics = [
+                       UncertaintyMetric('expected_rating_var'),
+                       UncertaintyMetric('expected_rating_var',
+                                         aggregate=np.average),
+                       UncertaintyMetric('confidence_interval_len'),
+                       UncertaintyMetric('confidence_interval_len',
+                                         aggregate=np.average)
+                       ]
+            return  cls(name, soli_configs, metrics)
         elif name == "synthetic":
             scenario = cls.build("basic")
 
