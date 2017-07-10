@@ -47,7 +47,7 @@ class Scenario(object):
         if name == "basic":
             if name not in cls.__scenarios:
                 soli_configs = SoliConfig.build(
-                    pick_mths=['pick_highest'],
+                    pick_mths=['pick_highest', 'pick_highest_after_credible'],
                     answer_mths=['answer_by_gen'],
                     optm_goals=[
                                 UncertaintyMetric('expected_rating_var'),
@@ -78,6 +78,8 @@ class Scenario(object):
                        UncertaintyMetric('expected_rating_var'),
                        UncertaintyMetric('expected_rating_var',
                                          aggregate=np.average),
+                       UncertaintyMetric('passed_credible_interval',
+                                         aggregate=np.sum),
                        UncertaintyMetric('confidence_interval_len'),
                        UncertaintyMetric('confidence_interval_len',
                                          aggregate=np.average)

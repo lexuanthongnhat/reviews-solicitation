@@ -123,6 +123,8 @@ class ReviewsSolicitation(ABC):
                 dataset_profile=dataset_profile)
         self.poll_to_report = OrderedDict()
 
+        self.credible_bar = self.star_rank / 2
+
     def simulate(self):
         """Simulate the asking-aswering process."""
         for i in range(self.poll_count):
@@ -283,6 +285,8 @@ class ReviewsSolicitation(ABC):
         if not self.reviews:
             self.reviews = self.original_reviews.copy()
 
+                       UncertaintyMetric('passed_credible_interval',
+                                         aggregate=np.sum),
         for next_feature_name in self.reviews[0].ordered_features:
             for feature in self.features:
                 if feature.name == next_feature_name and \
@@ -290,6 +294,41 @@ class ReviewsSolicitation(ABC):
                     return feature
         # No new features
         return None
+
+    def pick_highest_after_credible(self, already_picked_idx):
+        """Optimize for credible threshold first, highest later.
+
+        2 stages:
+            * Choose lowest to pass credible interval test.
+            * Then choose highest as usual.
+
+        Args:
+            already_picked_idx: list
+                list of already picked feature indexes
+        Returns:
+            datamodel.Feature
+                return None when running out of new features
+        """
+        # Features that have credible interval smaller than a threshold
+        credible_width = self.credible_bar
+        z = 1.96       # confidence level 95%
+        credible_feature_idx = np.where(
+                self.uncertainty_book.uncertainties * z <= credible_width)[0]
+
+        if len(credible_feature_idx) < len(self.seed_features):
+            already_picked_idx.extend(credible_feature_idx)
+            excluded_uncertainties = np.copy(
+                    self.uncertainty_book.uncertainties)
+            excluded_uncertainties[already_picked_idx] = float('inf')
+            max_indices = np.where(
+                    excluded_uncertainties == excluded_uncertainties.min())[0]
+                    # excluded_uncertainties < float('inf'))[0]
+            return self.features[np.random.choice(max_indices)]
+        else:
+            if self.credible_bar > self.star_rank / 20:
+                self.credible_bar -= self.star_rank / 20
+            return self.pick_highest(already_picked_idx)
+            # return self.pick_random(already_picked_idx)
 
 
 class SimulationStats(object):
