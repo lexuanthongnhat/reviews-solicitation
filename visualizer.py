@@ -1,16 +1,41 @@
 from collections import OrderedDict
+import logging
+import argparse
+import pickle
 
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+from matplotlib.backends.backend_pdf import PdfPages
 import seaborn as sns
 import numpy as np
 import pandas as pd
 
+import soli_start
 from uncertainty import expected_rating_var
+from bliu import BliuReview
 
 
-sns.set_style("darkgrid")
-sns.despine()
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+ch = logging.StreamHandler()
+ch.setFormatter(logging.Formatter('%(asctime)s-%(levelname)s - %(message)s'))
+logger.addHandler(ch)
+
+
+def set_style():
+    sns.set_style("white")
+    sns.set_context("paper")
+    sns.despine()
+
+    # Font
+    plt.rc("text", usetex=True)
+    plt.rc("font", family="serif", serif="Computer Modern Roman")
+    #plt.rc("xtick", labelsize=8)
+    #plt.rc("ytick", labelsize=8)
+    #plt.rc("axes", labelsize=8)
+
+
+set_style()
 palette = sns.color_palette()
 hatches = ["/", "'", "|", "-", "+", "x", "o", "O", ".", "*"]
 markers = ['o', '+', 'x', 'P', 'v',
@@ -20,10 +45,72 @@ markers = ['o', '+', 'x', 'P', 'v',
 markersize = 7
 linewidth = 2
 
+default_width = 6
+default_ratio = 1.618       # Golden ratio
+
+
+def to_latex(raw_str):
+    """Convert raw string to the latex-compliant string."""
+    return raw_str.replace("_", " ")
+
+
+def plot_experiment_result(
+        experiment="bliu_p300_q5_r20_real_200",
+        experiment_dir="output/",
+        plot_dir="plots/",
+        poll=299,
+        product_to_aspect_stars=None):
+    """Plot complete result of an experiment.
+    Args:
+        experiment: str,
+            which experiment to plot
+        experiment_dir: str, default='output/'
+            where does the experiment result is PICKLED
+        plot_dir: str, default='plots/'
+            where to store exported plots
+        poll: int, default=299
+            the end poll to plot
+        product_to_aspect_stars: dict, default=None
+            if available, then plot for each product.
+            E.g., bliu dataset
+    """
+    plot_pdf = PdfPages(plot_dir + experiment + ".pdf")
+    experiment_path = experiment_dir + experiment + ".pickle"
+
+    with open(experiment_path, 'rb') as f:
+        product_to_stats = pickle.load(f)
+
+    if not product_to_stats:
+        logger.warn("Nothing at {} to plot!!!".format(experiment_path))
+        return
+
+    soliconfig_to_stats_average = soli_start.summary_product_to_config_stats(
+        product_to_stats, plotted_poll_end=poll, ignore_rating=True)
+    fig = plot_sim_stats(soliconfig_to_stats_average,
+                         poll=poll,
+                         plot_rating=False,
+                         plot_pdf_prefix=experiment)
+    fig.suptitle('Average over all products', fontsize=15, fontweight='bold')
+    plot_pdf.savefig(fig)
+
+    if product_to_aspect_stars is not None:
+        for product, goal_to_stats in product_to_stats.items():
+            fig = plot_sim_stats(
+                goal_to_stats,
+                poll=poll,
+                product=product,
+                aspect_to_star_counts=product_to_aspect_stars[product])
+            fig.suptitle(product, fontsize=15, fontweight='bold')
+            plot_pdf.savefig(fig)
+
+    plot_pdf.close()
+    logger.info('Exported plots to "{}{}*.pdf"'.format(plot_dir, experiment))
+
 
 def plot_sim_stats(soliconfig_to_stats,
                    poll=100, fig_w=16, subplt_fig_h=5, plot_rating=True,
-                   product=None, aspect_to_star_counts=None):
+                   product=None, aspect_to_star_counts=None,
+                   plot_pdf_prefix=None):
     """Plot a product's rating distribution and simulation result statistics.
     Args:
         soliconfig_to_stats_average: dict,
@@ -59,8 +146,8 @@ def plot_sim_stats(soliconfig_to_stats,
     fig = plt.figure(figsize=(fig_w, h_unit_count * subplt_fig_h))
     if plot_rating:
         gs = gridspec.GridSpec(
-                2, 1, hspace=0.1,
-                height_ratios=[rating_h_unit, uncertainty_h_unit])
+            2, 1, hspace=0.1,
+            height_ratios=[rating_h_unit, uncertainty_h_unit])
     else:
         gs = gridspec.GridSpec(1, 1)
 
@@ -97,27 +184,36 @@ def plot_sim_stats(soliconfig_to_stats,
 
     # Plot uncertainties over polls
     gs0 = gridspec.GridSpecFromSubplotSpec(
-            uncertainty_row_count, uncertainty_col_count,
-            subplot_spec=gs[1] if plot_rating else gs[0])
+        uncertainty_row_count, uncertainty_col_count,
+        subplot_spec=gs[1] if plot_rating else gs[0])
 
     for i, answer in enumerate(answer_to_goal_stats.keys()):
         offset = metric_count * i
         uncertainty_axarr = [plt.subplot(gs0[row_id + offset, col_id])
                              for row_id in range(metric_count)
                              for col_id in range(uncertainty_col_count)]
-        plot_pick_answer_goals(uncertainty_axarr, soliconfig_to_stats,
-                               poll=poll, answer=answer)
-        export_pick_answer_goals(soliconfig_to_stats,
-                                 poll=poll, answer=answer,
-                                 filename=product if product else "overall")
-    plt.show()
+        plot_cost_of_multi_picks(uncertainty_axarr,
+                                 soliconfig_to_stats, poll=poll, answer=answer)
+        if plot_pdf_prefix is not None:
+            plot_cost_of_multi_picks_to_pdfs(
+                plot_pdf_prefix,
+                len(uncertainty_axarr),
+                soliconfig_to_stats,
+                poll=poll,
+                answer=answer)
+        export_cost_of_multi_picks_same_answer(
+            soliconfig_to_stats,
+            poll=poll,
+            answer=answer,
+            filename=product if product else "overall")
     return fig
 
 
-def export_pick_answer_goals(soliconfig_to_stats,
-                             answer="answer_by_gen", poll=100,
-                             filename=None):
-    """
+def export_cost_of_multi_picks_same_answer(soliconfig_to_stats,
+                                           answer="answer_by_gen", poll=100,
+                                           filename=None):
+    """Export cost of multiple pick method with same answer to xlsx file.
+
     Args:
         axarr: list of Axes
             Each axes is a subplot of a SoliConfig
@@ -135,8 +231,8 @@ def export_pick_answer_goals(soliconfig_to_stats,
             if goal.baseline:
                 reports = stats.uncertainty_reports[0:poll]
                 goal_to_totals[goal_str] = [
-                        report.get_uncertainty_total(metric)
-                        for report in reports]
+                    report.get_uncertainty_total(metric)
+                    for report in reports]
                 df = pd.DataFrame(goal_to_totals)
                 baselines.append(goal_str)
 
@@ -150,7 +246,7 @@ def export_pick_answer_goals(soliconfig_to_stats,
                 df[goal_str] = totals
                 for baseline in baselines:
                     df[goal_str + " / " + baseline] = (
-                            1 - df[goal_str] / df[baseline]) * 100
+                        1 - df[goal_str] / df[baseline]) * 100
 
         metric_answer_to_df[str(metric)] = df
 
@@ -161,13 +257,17 @@ def export_pick_answer_goals(soliconfig_to_stats,
                         float_format="%.2f", freeze_panes=(1, 1))
 
 
-def plot_pick_answer_goals(axarr, soliconfig_to_stats,
-                           answer="answer_by_gen", poll=100,
-                           uncertainty_poll_step=5, std_poll_step=10):
-    """
+def plot_cost_of_multi_picks(axarr,
+                             soliconfig_to_stats,
+                             answer="answer_by_gen",
+                             poll=100,
+                             uncertainty_poll_step=5,
+                             std_poll_step=10):
+    """Plot the uncertainty change of multiple pick method with same answer.
     Args:
         axarr: list of Axes
-            Each axes is a subplot of a SoliConfig
+            Each axes is a cost/std subplot of a SoliConfig
+            In total, #axes: #metric * 2 (cost/std)
         soliconfig_to_stats: SoliConfig -> SimulationStats
     """
     stats_sample = list(soliconfig_to_stats.values())[0]
@@ -182,21 +282,55 @@ def plot_pick_answer_goals(axarr, soliconfig_to_stats,
             ax = axarr[metric_idx * 2]
             Y = [report.get_uncertainty_total(metric) for report in reports]
             ax.plot(X[::uncertainty_poll_step], Y[::uncertainty_poll_step],
-                    label=goal_str)
-
-            ax.set_title('Cost change over polls ({})'.format(answer))
-            ax.set_ylabel(str(metric))
+                    label=to_latex(goal_str))
+            ax.set_title('Cost change over polls ({})'.format(
+                to_latex(answer)))
+            ax.set_ylabel(to_latex(str(metric)))
+            ax.set_xlabel("Poll")
 
             # Plot standard deviation
             ax_std = axarr[metric_idx * 2 + 1]
             Y_std = [report.metric_to_std[metric] for report in reports]
             ax_std.plot(X[::std_poll_step], Y_std[::std_poll_step],
-                        label=goal.pick_goal_str())
-            ax_std.set_title('Std change over polls ({})'.format(answer))
+                        label=to_latex(goal.pick_goal_str()))
+            ax_std.set_title('Std change over polls ({})'.format(
+                to_latex(answer)))
             ax_std.set_ylabel("Standard Deviation")
 
     for ax in axarr:
         ax.legend(loc='upper right')
+
+
+def plot_cost_of_multi_picks_to_pdfs(
+        pdf_prefix,
+        subplot_count,
+        soliconfig_to_stats,
+        answer="answer_by_gen",
+        poll=100,
+        uncertainty_poll_step=5,
+        std_poll_step=10,
+        width=default_width,
+        ratio=default_ratio):
+    """Export to pdf plot.
+
+    """
+    pdfs = [PdfPages("plots/" + pdf_prefix + "_" + str(i) + ".pdf")
+            for i in range(subplot_count)]
+    # figs = [plt.figure()
+    figs = [plt.figure(figsize=(width, width / ratio))
+            for i in range(subplot_count)]
+    axarr = [fig.add_subplot(1, 1, 1) for fig in figs]
+
+    plot_cost_of_multi_picks(axarr,
+                             soliconfig_to_stats, poll=poll, answer=answer)
+
+    for pdf, fig in zip(pdfs, figs):
+        fig.patch.set_alpha(0.)
+        # fig.tight_layout()
+        # plt.tight_layout()
+        pdf.savefig(fig)
+        pdf.close()
+        plt.close()     # Suppress showing inline in Jupyter notebook
 
 
 def partition_goal_by_answer(goal_to_value):
@@ -240,14 +374,14 @@ def plot_picked_features(axarr, soliconfig_to_stats,
     subpl_idx = 0
     for answer, goal_to_stats in answer_to_goal_stats.items():
         feature_to_per_config_counts = get_aspect_picked_counts(
-                goal_to_stats, features, poll=poll)
+            goal_to_stats, features, poll=poll)
         ax = axarr[subpl_idx]
         count_max = 0
         count_min = float("inf")
         for i, config in enumerate(configs):
             Y = [config_to_count[config]
                  for config_to_count in feature_to_per_config_counts.values()]
-            ax.plot(X, Y, label=config.pick_goal_str(),
+            ax.plot(X, Y, label=to_latex(config.pick_goal_str()),
                     marker=markers[i], ms=markersize, markeredgewidth=2)
             count_max = max(count_max, np.max(Y))
             count_min = min(count_min, np.min(Y))
@@ -255,8 +389,8 @@ def plot_picked_features(axarr, soliconfig_to_stats,
         ax.set_xticks(X)
         ax.set_xticklabels([feature.name for feature in features])
         ax.set_title("2. Rating count after {} polls ({})".format(
-            poll, answer))
-        ax.set_ylabel("# Ratings")
+            poll, to_latex(answer)))
+        ax.set_ylabel("\# Ratings")
         ax.legend(loc='upper left', ncol=5)
         ax.set_ylim(count_min * 0.95, count_max * 1.03)
         subpl_idx += 1
@@ -269,8 +403,8 @@ def get_aspect_picked_counts(soliconfig_to_stats, sorted_features, poll=100):
                          for config, stats in soliconfig_to_stats.items()}
     for feature in sorted_features:
         feature_to_per_config_counts[feature] = {
-                config: np.sum(ratings[feature.idx, :])
-                for config, ratings in config_to_ratings.items()}
+            config: np.sum(ratings[feature.idx, :])
+            for config, ratings in config_to_ratings.items()}
 
     return feature_to_per_config_counts
 
@@ -300,7 +434,7 @@ def plot_aspect_star_counts(ax, product, aspect_to_star_counts):
     ax.set_xticks(X_mid)
     ax.set_xticklabels(aspects)
     ax.legend(loc='upper center', ncol=5)
-    ax.set_ylabel('# Ratings')
+    ax.set_ylabel('\# Ratings')
     ax.set_title("1a. Dataset profile: rating count (used in generator)")
 
 
@@ -326,7 +460,7 @@ def plot_aspect_rating_dist(axarr, product,
     ax_violin.violinplot(raw_stars, showmeans=True)
     ax_violin.set_ylabel("Star")
     ax_violin.set_title(
-            "1b. Dataset profile: rating distribution (used in generator)")
+        "1b. Dataset profile: rating distribution (used in generator)")
 
     # Standard Deviation of ratings
     aspect_stds = [np.std(stars) for stars in aspect_to_raw_stars.values()]
@@ -342,8 +476,8 @@ def plot_aspect_rating_dist(axarr, product,
 
     # Expected Rating Variance
     aspect_exp_rating_vars = [
-            expected_rating_var(np.array(list(star_counts.values())))
-            for star_counts in aspect_to_star_counts.values()]
+        expected_rating_var(np.array(list(star_counts.values())))
+        for star_counts in aspect_to_star_counts.values()]
     ax_erv.plot(X, aspect_exp_rating_vars, marker=markers[-1], ms=markersize)
     erv_max = np.max(aspect_exp_rating_vars)
     for x, erv in zip(X, aspect_exp_rating_vars):
@@ -374,3 +508,26 @@ def get_raw_stars(aspect_to_star_counts):
             stars.extend([star] * count)
         aspect_to_raw_stars[aspect] = stars
     return aspect_to_raw_stars
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Visualize experiment result")
+    parser.add_argument(
+        "--dataset", default="edmunds",
+        help="Dataset name (default='edmunds')")
+    parser.add_argument(
+        "--experiment", default="bliu_p300_q5_r20_real_200",
+        help="Experiment name (default='bliu_p300_q5_r20_real_200')")
+
+    args = parser.parse_args()
+
+    product_to_aspect_stars = None
+    if args.dataset == "bliu":
+        _, product_to_aspect_stars = BliuReview.preprocess_dataset(
+            "anno-datasets/bliu-datasets")
+
+    plot_experiment_result(
+        experiment=args.experiment,
+        poll=299,
+        product_to_aspect_stars=product_to_aspect_stars
+    )

@@ -6,7 +6,6 @@ import scipy as sp
 
 from data_model import Review
 from edmunds import EdmundsReviewSolicitation
-from uncertainty import expected_rating_var
 
 
 logger = logging.getLogger(__name__)

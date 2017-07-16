@@ -24,17 +24,26 @@ class SoliConfig(object):
         self.baseline = baseline
 
     @classmethod
-    def build(cls,
-              pick_mths=['pick_highest', 'pick_prob'],
-              answer_mths=['answer_by_gen', 'answer_in_time_order'],
-              optm_goals=[UncertaintyMetric('expected_rating_var')]
-              ):
+    def build(cls, pick_mths=None, answer_mths=None, optm_goals=None):
         """Build Solicitation Configuration.
 
         Baseline configs are always in the beginning of the return list.
+        Args:
+            pick_mths: list,
+                default: ['pick_highest', 'pick_prob']
+            answer_mths: list,
+                default: ['answer_by_gen', 'answer_in_time_order']
+            optm_goals: list, [UncertaintyMetric('expected_rating_var')]
+                optimization goal
         Returns:
             configs: list of SoliConfig
         """
+        pick_mths = ['pick_highest', 'pick_prob'] if pick_mths is None else \
+            pick_mths
+        answer_mths = ['answer_by_gen', 'answer_in_time_order'] if \
+            answer_mths is None else answer_mths
+        optm_goals = [UncertaintyMetric('expected_rating_var')] if \
+            optm_goals is None else optm_goals
         configs = []
 
         pick_baselines = ['pick_random', 'pick_least_count']
@@ -49,7 +58,7 @@ class SoliConfig(object):
 
     def pick_goal_str(self):
         config = self.pick
-        if self.optm_goal:
+        if self.optm_goal and self.pick != "pick_by_user":
             config += '_' + self.optm_goal.show()
         return config
 
@@ -133,6 +142,12 @@ class ReviewsSolicitation(ABC):
             # from a single real review
             self.num_waiting_answers = self.question_count
 
+            # Ask up-to-k questions
+            if self.soli_config.answer == "answer_almost_real":
+                next_review = self.reviews[0] if self.reviews else \
+                        self.original_reviews[0]
+                if self.question_count > len(next_review.features):
+                    self.question_count = len(next_review.features)
             already_picked_idx = []
             rated_features = []
             for q in range(self.question_count):
@@ -142,7 +157,7 @@ class ReviewsSolicitation(ABC):
                 answered_star = self.__getattribute__(self.soli_config.answer)(
                         picked_feature)
 
-                # When running out of feature in pick_real method
+                # When running out of feature in pick_by_user method
                 if not picked_feature and not answered_star:
                     continue
 
@@ -266,7 +281,7 @@ class ReviewsSolicitation(ABC):
         min_indices = np.where(rating_counts == rating_counts.min())[0]
         return self.features[np.random.choice(min_indices)]
 
-    def pick_real(self, already_picked_idx):
+    def pick_by_user(self, already_picked_idx):
         """Pick the first feature in the review (contain sorted features)
 
         Only use this method with answer method: answer_in_time_order or
@@ -285,8 +300,6 @@ class ReviewsSolicitation(ABC):
         if not self.reviews:
             self.reviews = self.original_reviews.copy()
 
-                       UncertaintyMetric('passed_credible_interval',
-                                         aggregate=np.sum),
         for next_feature_name in self.reviews[0].ordered_features:
             for feature in self.features:
                 if feature.name == next_feature_name and \
@@ -322,7 +335,6 @@ class ReviewsSolicitation(ABC):
             excluded_uncertainties[already_picked_idx] = float('inf')
             max_indices = np.where(
                     excluded_uncertainties == excluded_uncertainties.min())[0]
-                    # excluded_uncertainties < float('inf'))[0]
             return self.features[np.random.choice(max_indices)]
         else:
             if self.credible_bar > self.star_rank / 20:

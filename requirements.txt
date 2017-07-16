@@ -12,6 +12,7 @@ flake8 >= 3.0.4
     enum34; python_version<"3.4"
 
 lxml >= 3.5.0
+openpyxl >= 2.4.8
 
 # Plotting
 matplotlib >= 2.0.0

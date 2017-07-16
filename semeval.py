@@ -72,4 +72,4 @@ class SemevalReviewSolicitation(EdmundsReviewSolicitation):
     """
 
     def answer_in_time_order(self, picked_feature):
-        raise NotImplementedError("Bliu reviews don't support this method!")
+        raise NotImplementedError("Semeval reviews don't support this method!")
