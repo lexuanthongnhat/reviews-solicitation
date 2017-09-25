@@ -36,8 +36,15 @@ class UncertaintyMetric(object):
 
     def show(self, show_aggregate=False):
         metric_str = self.criterion
+
+        # temporary hack to shorten this metric for pretty plot
+        if metric_str == "expected_rating_var":
+            metric_str = "variance"
         if show_aggregate:
-            metric_str += '_' + self.aggregate.__name__
+            if self.aggregate.__name__ == "amax":
+                metric_str += '_max'
+            else:
+                metric_str += '_' + self.aggregate.__name__
         metric_str += '_weighted' if self.weighted else ''
         metric_str += '_correlated' if self.correlated else ''
         if self.correlated and self.cor_norm_factor != 1.0:

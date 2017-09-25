@@ -1,11 +1,11 @@
+import argparse
 from collections import OrderedDict
 import logging
-import argparse
+from os import path
 import pickle
 
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-from matplotlib.backends.backend_pdf import PdfPages
 import seaborn as sns
 import numpy as np
 import pandas as pd
@@ -22,44 +22,71 @@ ch.setFormatter(logging.Formatter('%(asctime)s-%(levelname)s - %(message)s'))
 logger.addHandler(ch)
 
 
+# Text width according to different conference templates
+#   \the\textwidth from latex, unit: point
+CONF_TEXT_WIDTHS = {
+        "acm": 506.295,
+        "siam": 492.0
+        }
+# Points per inch: https://en.wikibooks.org/wiki/LaTeX/Lengths
+PTS_PER_INCH = 72.27
+GOLDEN_RATIO = 1.618
+
+
+def figsize(scale, conference="acm", ratio=GOLDEN_RATIO):
+    """Figure size in inch.
+
+    Returns:
+        (fig_width, fig_height) tuple, unit: inch
+    """
+    text_width_pt = CONF_TEXT_WIDTHS[conference]
+    text_width_in = text_width_pt / PTS_PER_INCH
+    fig_width = text_width_in * scale
+    fig_height = fig_width / ratio
+    return (fig_width, fig_height)
+
+
+def savefig(fig, filename):
+    fig.savefig('{}.pdf'.format(filename), bbox_inches='tight')
+
+
 def set_style():
     sns.set_style("white")
     sns.set_context("paper")
     sns.despine()
 
-    # Font
     plt.rc("text", usetex=True)
-    plt.rc("font", family="serif", serif="Computer Modern Roman")
-    #plt.rc("xtick", labelsize=8)
-    #plt.rc("ytick", labelsize=8)
-    #plt.rc("axes", labelsize=8)
+    plt.rc("font", family="serif", size=10)
+    plt.rc("legend", fontsize=8)
+    plt.rc("axes", labelsize=10)
+    plt.rc("xtick", labelsize=8)
+    plt.rc("ytick", labelsize=8)
 
 
 set_style()
 palette = sns.color_palette()
-hatches = ["/", "'", "|", "-", "+", "x", "o", "O", ".", "*"]
-markers = ['o', '+', 'x', 'P', 'v',
+HATCHES = ("/", "'", "|", "-", "+", "x", "o", "O", ".", "*")
+MARKERS = ('o', 'd', 'x', '+', 'P', 'v',
            '1', '2', '3', '4',
            '^', '<', '>', 's', 'p', '*',
-           'h', 'H', 'd', 'D']
-markersize = 7
-linewidth = 2
-
-default_width = 6
-default_ratio = 1.618       # Golden ratio
+           'h', 'H', 'D')
+MARKER_SIZE = 4
+MARKER_WIDTH = 1
 
 
-def to_latex(raw_str):
+def _to_latex(raw_str):
     """Convert raw string to the latex-compliant string."""
     return raw_str.replace("_", " ")
 
 
-def plot_experiment_result(
-        experiment="bliu_p300_q5_r20_real_200",
-        experiment_dir="output/",
-        plot_dir="plots/",
-        poll=299,
-        product_to_aspect_stars=None):
+def plot_experiment_result(experiment,
+                           experiment_dir="output/",
+                           plot_dir="plots/",
+                           poll=299,
+                           product_to_aspect_stars=None,
+                           conference="acm",
+                           scale=1,
+                           ratio=GOLDEN_RATIO):
     """Plot complete result of an experiment.
     Args:
         experiment: str,
@@ -74,7 +101,7 @@ def plot_experiment_result(
             if available, then plot for each product.
             E.g., bliu dataset
     """
-    plot_pdf = PdfPages(plot_dir + experiment + ".pdf")
+    filename = plot_dir + experiment
     experiment_path = experiment_dir + experiment + ".pickle"
 
     with open(experiment_path, 'rb') as f:
@@ -89,9 +116,12 @@ def plot_experiment_result(
     fig = plot_sim_stats(soliconfig_to_stats_average,
                          poll=poll,
                          plot_rating=False,
-                         plot_pdf_prefix=experiment)
+                         plot_pdf_prefix=experiment,
+                         scale=scale,
+                         conference=conference,
+                         ratio=ratio)
     fig.suptitle('Average over all products', fontsize=15, fontweight='bold')
-    plot_pdf.savefig(fig)
+    savefig(fig, filename)
 
     if product_to_aspect_stars is not None:
         for product, goal_to_stats in product_to_stats.items():
@@ -99,17 +129,18 @@ def plot_experiment_result(
                 goal_to_stats,
                 poll=poll,
                 product=product,
-                aspect_to_star_counts=product_to_aspect_stars[product])
+                aspect_to_star_counts=product_to_aspect_stars[product]
+                )
             fig.suptitle(product, fontsize=15, fontweight='bold')
-            plot_pdf.savefig(fig)
+            savefig(fig, filename)
 
-    plot_pdf.close()
     logger.info('Exported plots to "{}{}*.pdf"'.format(plot_dir, experiment))
 
 
 def plot_sim_stats(soliconfig_to_stats,
                    poll=100, fig_w=16, subplt_fig_h=5, plot_rating=True,
                    product=None, aspect_to_star_counts=None,
+                   scale=1, conference="acm", ratio=GOLDEN_RATIO,
                    plot_pdf_prefix=None):
     """Plot a product's rating distribution and simulation result statistics.
     Args:
@@ -195,10 +226,12 @@ def plot_sim_stats(soliconfig_to_stats,
         plot_cost_of_multi_picks(uncertainty_axarr,
                                  soliconfig_to_stats, poll=poll, answer=answer)
         if plot_pdf_prefix is not None:
+            figure_size = figsize(scale, conference=conference, ratio=ratio)
             plot_cost_of_multi_picks_to_pdfs(
                 plot_pdf_prefix,
                 len(uncertainty_axarr),
                 soliconfig_to_stats,
+                figure_size,
                 poll=poll,
                 answer=answer)
         export_cost_of_multi_picks_same_answer(
@@ -261,7 +294,7 @@ def plot_cost_of_multi_picks(axarr,
                              soliconfig_to_stats,
                              answer="answer_by_gen",
                              poll=100,
-                             uncertainty_poll_step=5,
+                             uncertainty_poll_step=20,
                              std_poll_step=10):
     """Plot the uncertainty change of multiple pick method with same answer.
     Args:
@@ -274,28 +307,37 @@ def plot_cost_of_multi_picks(axarr,
     metrics = stats_sample.poll_to_report[1].metrics()
 
     X = list(stats_sample.polls)[0:poll]
+    goals = soliconfig_to_stats.keys()
     for metric_idx, metric in enumerate(metrics):
-        for goal, stats in soliconfig_to_stats.items():
+        for goal, marker in zip(goals, MARKERS[:len(goals)]):
             goal_str = goal.pick_goal_str()
+            stats = soliconfig_to_stats[goal]
             reports = stats.uncertainty_reports[0:poll]
             # Plot uncertainty result
             ax = axarr[metric_idx * 2]
             Y = [report.get_uncertainty_total(metric) for report in reports]
             ax.plot(X[::uncertainty_poll_step], Y[::uncertainty_poll_step],
-                    label=to_latex(goal_str))
+                    label=_to_latex(goal_str),
+                    marker=marker,
+                    ms=MARKER_SIZE,
+                    markeredgewidth=MARKER_WIDTH)
             ax.set_title('Cost change over polls ({})'.format(
-                to_latex(answer)))
-            ax.set_ylabel(to_latex(str(metric)))
+                _to_latex(answer)))
+            ax.set_ylabel(_to_latex(str(metric)))
             ax.set_xlabel("Poll")
 
             # Plot standard deviation
             ax_std = axarr[metric_idx * 2 + 1]
             Y_std = [report.metric_to_std[metric] for report in reports]
             ax_std.plot(X[::std_poll_step], Y_std[::std_poll_step],
-                        label=to_latex(goal.pick_goal_str()))
+                        label=_to_latex(goal.pick_goal_str()),
+                        marker=marker,
+                        ms=MARKER_SIZE,
+                        markeredgewidth=MARKER_WIDTH)
             ax_std.set_title('Std change over polls ({})'.format(
-                to_latex(answer)))
-            ax_std.set_ylabel("Standard Deviation")
+                _to_latex(answer)))
+            ax_std.set_ylabel("standard deviation")
+            ax_std.set_xlabel("Poll")
 
     for ax in axarr:
         ax.legend(loc='upper right')
@@ -305,31 +347,27 @@ def plot_cost_of_multi_picks_to_pdfs(
         pdf_prefix,
         subplot_count,
         soliconfig_to_stats,
+        figsize,
+        plot_dir="plots/",
         answer="answer_by_gen",
         poll=100,
         uncertainty_poll_step=5,
-        std_poll_step=10,
-        width=default_width,
-        ratio=default_ratio):
+        std_poll_step=10):
     """Export to pdf plot.
 
     """
-    pdfs = [PdfPages("plots/" + pdf_prefix + "_" + str(i) + ".pdf")
-            for i in range(subplot_count)]
-    # figs = [plt.figure()
-    figs = [plt.figure(figsize=(width, width / ratio))
+    filenames = [path.join(plot_dir, pdf_prefix + "_" + str(i))
+                 for i in range(subplot_count)]
+    figs = [plt.figure(figsize=figsize)
             for i in range(subplot_count)]
     axarr = [fig.add_subplot(1, 1, 1) for fig in figs]
 
     plot_cost_of_multi_picks(axarr,
                              soliconfig_to_stats, poll=poll, answer=answer)
 
-    for pdf, fig in zip(pdfs, figs):
+    for filename, fig in zip(filenames, figs):
         fig.patch.set_alpha(0.)
-        # fig.tight_layout()
-        # plt.tight_layout()
-        pdf.savefig(fig)
-        pdf.close()
+        savefig(fig, filename)
         plt.close()     # Suppress showing inline in Jupyter notebook
 
 
@@ -381,15 +419,17 @@ def plot_picked_features(axarr, soliconfig_to_stats,
         for i, config in enumerate(configs):
             Y = [config_to_count[config]
                  for config_to_count in feature_to_per_config_counts.values()]
-            ax.plot(X, Y, label=to_latex(config.pick_goal_str()),
-                    marker=markers[i], ms=markersize, markeredgewidth=2)
+            ax.plot(X, Y, label=_to_latex(config.pick_goal_str()),
+                    marker=MARKERS[i],
+                    ms=MARKER_SIZE,
+                    markeredgewidth=MARKER_WIDTH)
             count_max = max(count_max, np.max(Y))
             count_min = min(count_min, np.min(Y))
 
         ax.set_xticks(X)
         ax.set_xticklabels([feature.name for feature in features])
         ax.set_title("2. Rating count after {} polls ({})".format(
-            poll, to_latex(answer)))
+            poll, _to_latex(answer)))
         ax.set_ylabel("\# Ratings")
         ax.legend(loc='upper left', ncol=5)
         ax.set_ylim(count_min * 0.95, count_max * 1.03)
@@ -464,7 +504,10 @@ def plot_aspect_rating_dist(axarr, product,
 
     # Standard Deviation of ratings
     aspect_stds = [np.std(stars) for stars in aspect_to_raw_stars.values()]
-    ax_std.plot(X, aspect_stds, marker=markers[-1], ms=markersize)
+    ax_std.plot(X, aspect_stds,
+                marker=MARKERS[-1],
+                ms=MARKER_SIZE,
+                markeredgewidth=MARKER_WIDTH)
     std_max = np.max(aspect_stds)
     for x, std in zip(X, aspect_stds):
         ax_std.annotate("{:.2f}".format(std), xy=(x, std + std_max * 0.01),
@@ -478,7 +521,10 @@ def plot_aspect_rating_dist(axarr, product,
     aspect_exp_rating_vars = [
         expected_rating_var(np.array(list(star_counts.values())))
         for star_counts in aspect_to_star_counts.values()]
-    ax_erv.plot(X, aspect_exp_rating_vars, marker=markers[-1], ms=markersize)
+    ax_erv.plot(X, aspect_exp_rating_vars,
+                marker=MARKERS[-1],
+                ms=MARKER_SIZE,
+                markeredgewidth=MARKER_WIDTH)
     erv_max = np.max(aspect_exp_rating_vars)
     for x, erv in zip(X, aspect_exp_rating_vars):
         ax_erv.annotate("{:.3f}".format(erv), xy=(x, erv + erv_max * 0.01),
@@ -512,12 +558,19 @@ def get_raw_stars(aspect_to_star_counts):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Visualize experiment result")
-    parser.add_argument(
-        "--dataset", default="edmunds",
-        help="Dataset name (default='edmunds')")
-    parser.add_argument(
-        "--experiment", default="bliu_p300_q5_r20_real_200",
-        help="Experiment name (default='bliu_p300_q5_r20_real_200')")
+    add_arg = parser.add_argument
+    add_arg("--dataset", default="edmunds",
+            help="Dataset name (default='edmunds')")
+    add_arg("--experiment", default="bliu_p300_q5_r20_real_200",
+            help="Experiment name (default='bliu_p300_q5_r20_real_200')")
+    add_arg("--conference", default="acm", choices=CONF_TEXT_WIDTHS.keys(),
+            help="""Conference name, used for calculating appropriate text
+                    width in paper (default='acm').""")
+    add_arg("--scale", type=float, default=1.0,
+            help="Scale plot to a factor of text width (default=1).")
+    add_arg("--ratio", type=int, default=GOLDEN_RATIO,
+            help="""ratio between width and height of exported single plot (
+                    default={}, i.e. golden ratio)""".format(GOLDEN_RATIO))
 
     args = parser.parse_args()
 
@@ -527,7 +580,10 @@ if __name__ == '__main__':
             "anno-datasets/bliu-datasets")
 
     plot_experiment_result(
-        experiment=args.experiment,
+        args.experiment,
         poll=299,
-        product_to_aspect_stars=product_to_aspect_stars
+        product_to_aspect_stars=product_to_aspect_stars,
+        conference=args.conference,
+        scale=args.scale,
+        ratio=args.ratio
     )
