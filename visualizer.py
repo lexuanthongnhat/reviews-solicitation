@@ -51,7 +51,7 @@ def savefig(fig, filename):
 
 
 def set_style():
-    sns.set_style("white")
+    sns.set_style("ticks")
     sns.set_context("paper")
     sns.despine()
 
@@ -63,7 +63,6 @@ def set_style():
     plt.rc("ytick", labelsize=8)
 
 
-set_style()
 palette = sns.color_palette()
 HATCHES = ("/", "'", "|", "-", "+", "x", "o", "O", ".", "*")
 MARKERS = ('o', 'd', 'x', '+', 'P', 'v',
@@ -321,7 +320,7 @@ def plot_cost_of_multi_picks(axarr,
                     marker=marker,
                     ms=MARKER_SIZE,
                     markeredgewidth=MARKER_WIDTH)
-            ax.set_title('Cost change over polls ({})'.format(
+            ax.set_title('Unreliability Level ({})'.format(
                 _to_latex(answer)))
             ax.set_ylabel(_to_latex(str(metric)))
             ax.set_xlabel("Poll")
@@ -334,7 +333,7 @@ def plot_cost_of_multi_picks(axarr,
                         marker=marker,
                         ms=MARKER_SIZE,
                         markeredgewidth=MARKER_WIDTH)
-            ax_std.set_title('Std change over polls ({})'.format(
+            ax_std.set_title("Method's stability ({})".format(
                 _to_latex(answer)))
             ax_std.set_ylabel("standard deviation")
             ax_std.set_xlabel("Poll")
@@ -573,6 +572,9 @@ if __name__ == '__main__':
                     default={}, i.e. golden ratio)""".format(GOLDEN_RATIO))
 
     args = parser.parse_args()
+
+    # Style for publication friendly plots
+    set_style()
 
     product_to_aspect_stars = None
     if args.dataset == "bliu":

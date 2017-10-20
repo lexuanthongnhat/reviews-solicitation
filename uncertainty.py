@@ -42,9 +42,9 @@ class UncertaintyMetric(object):
             metric_str = "variance"
         if show_aggregate:
             if self.aggregate.__name__ == "amax":
-                metric_str += '_max'
+                metric_str = 'max_' + metric_str
             else:
-                metric_str += '_' + self.aggregate.__name__
+                metric_str = self.aggregate.__name__ + '_' + metric_str
         metric_str += '_weighted' if self.weighted else ''
         metric_str += '_correlated' if self.correlated else ''
         if self.correlated and self.cor_norm_factor != 1.0:
@@ -587,7 +587,11 @@ def naive_var(ratings):
 
 def expected_rating_var(ratings):
     """Variance of feature's expected rating.
-        Var(r|x) = Var(E[\#stars])
+            Var(r|x) = Var(E[\#stars])
+    Variance of linear combination has quaratic form matrix solution
+            Var(aX) = a'∑a
+        in which a is column vector, a' means a's transpose, and ∑ is
+        covariance matrix of random vector X
     Args:
         ratings: list, numpy array of star
     """
@@ -596,28 +600,11 @@ def expected_rating_var(ratings):
 
     d = dirichlet_params.shape[0]
     stars = np.linspace(1, d, d)
-    star_weights = np.outer(stars, stars.T)
 
-    feature_var = sum(sum(star_weights * cov_matrix))
+    # star_weights = np.outer(stars, stars.T)
+    # feature_var = sum(sum(star_weights * cov_matrix))
+    feature_var = stars.dot(cov_matrix).dot(stars)
     return feature_var
-
-
-def plain_expected_rating_var(ratings):
-    """Use formula from:
-    http://www.evanmiller.org/ranking-items-with-star-ratings.html
-    """
-    alphas = np.array(ratings) + 1
-    alpha_0 = alphas.sum()
-    norml_alphas = alphas / alpha_0
-
-    d = alphas.shape[0]
-    stars = np.linspace(1, d, d)
-    part1 = np.sum(stars * stars * norml_alphas)
-    part2 = np.sum(stars * norml_alphas)
-    part2 *= part2
-
-    agg_var = (part1 - part2) / (alpha_0 + 1)
-    return agg_var
 
 
 def pearson_cor_on_flatten(flatten_count_table):
@@ -635,15 +622,15 @@ def pearson_cor(count_table):
     Args:
         count_table: numpy.array (2-d). For example:
             |          | Cost-1* | Cost-2* | Cost-3* |
-            |Screen-1* |    3    |    2    |    0    | 5
-            |Screen-2* |    1    |    5    |    2    | 8
-            |Screen-3* |    1    |    4    |    7    | 12
-            |          |    5    |    11   |    9    |
+            |Screen-1* |    3    |    2    |    0    |
+            |Screen-2* |    1    |    5    |    2    |
+            |Screen-3* |    1    |    4    |    7    |
+        where d = 3
     Returns:
         a real number
     """
     d = count_table.shape[0]    # number of star levels
-    param_table = count_table
+    param_table = count_table + 1
 
     fat_dirich_params = param_table.flatten()
     fat_covs = np.array(dirich_cov(fat_dirich_params))    # dim: d^2 * d^2
@@ -865,10 +852,9 @@ if __name__ == '__main__':
         raw_stars.append(stars)
     print(raw_stars)
     print(np.apply_along_axis(expected_rating_var, 1, rates))
-    print(np.apply_along_axis(plain_expected_rating_var, 1, rates))
 
     count_tables = []
-    for i in range(0, 50, 5):
+    for i in range(0, 51, 10):
         count_tables.append(np.array([[i, 0, 0, 0, 0],
                                       [0, i, 0, 0, 0],
                                       [0, 0, i, 0, 0],
@@ -888,7 +874,8 @@ if __name__ == '__main__':
     for table in count_tables:
         print(table, ' ---> ', pearson_cor(table))
 
-    x = np.array([[6, 10, 8],
-                  [9, 6, 3]])
-    print(confidence_region_vol(x, confidence_level=0.95))
+    x = np.array([[10, 0, 0],
+                  [0, 10, 0],
+                  [0, 0, 10]])
+    print(confidence_region_vol(x.flatten(), confidence_level=0.95))
     unittest.main()
