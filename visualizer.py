@@ -562,6 +562,9 @@ if __name__ == '__main__':
             help="Dataset name (default='edmunds')")
     add_arg("--experiment", default="bliu_p300_q5_r20_real_200",
             help="Experiment name (default='bliu_p300_q5_r20_real_200')")
+    add_arg("--experiment-dir", default="output/",
+            help="""Directory of experimental results, i.e. the pickle file
+                    (default: output/)""")
     add_arg("--conference", default="acm", choices=CONF_TEXT_WIDTHS.keys(),
             help="""Conference name, used for calculating appropriate text
                     width in paper (default='acm').""")
@@ -583,6 +586,7 @@ if __name__ == '__main__':
 
     plot_experiment_result(
         args.experiment,
+        experiment_dir=args.experiment_dir,
         poll=299,
         product_to_aspect_stars=product_to_aspect_stars,
         conference=args.conference,
