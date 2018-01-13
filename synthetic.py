@@ -1,5 +1,6 @@
 import logging
 import pickle
+import random
 
 import numpy as np
 import scipy as sp
@@ -21,39 +22,26 @@ class SyntheticReview(Review):
 
     @classmethod
     def import_dataset(cls, dataset_path, star_rank=6, duplicate=False,
-                       feature_count=2):
+                       feature_count=2, randomize=False):
         reviews = []
-
         alpha_betas = np.array([
-            [2, 2], [20, 1],
-            [0.1, 0.1], [100, 1], [3, 60],
-            [0.2, 0.25], [2, 2], [1, 1],
-            [0.1, 0.7], [0.1, 10], [50, 50],
-            [0.01, 0.01]
+                [1, 1], [20, 1],
+                [0.1, 0.1], [100, 1], [3, 60],
+                [0.2, 0.25], [2, 2.5],
+                [0.1, 0.7], [0.1, 10], [50, 50],
+                [0.01, 0.01], [1, 1.5], [6, 8], [3, 20], [15, 4],
+                [0.5, 1], [ 3, 2.5], [7, 0.2], [5, 25], [5.5, 9]
             ])
 
         for i in range(feature_count):
             feature = "feature_" + str(i)
             cls.seed_features.append(feature)
 
-            alpha, beta = alpha_betas[i, :]
-            star_dist = np.array([beta_binom_pmf(alpha, beta, star_rank - 1, k)
-                                  for k in range(star_rank)])
+            alpha, beta = alpha_betas[i, :] if not randomize \
+                                            else random_alpha_beta()
+            logger.debug("alpha, beta: {}, {}".format(alpha, beta))
+            star_dist = np.array(beta_binomial(alpha, beta, star_rank - 1))
             star_counts = np.ceil(star_dist * 5 * star_rank)
-
-            if i == 6:
-                # star_counts = np.array([10, 2, 2, 1, 9, 10, 1,  2, 2, 10])
-                star_counts = np.array([10, 2, 2, 1, 9, 11, 1, 2, 2, 10,
-                                        11, 1, 3, 1, 10, 9, 2, 1, 2, 10])
-
-            # Randomize generate
-            # count_total = star_rank * 9
-            # star_counts = np.zeros(star_rank + 1)
-            # star_counts[-1] = count_total
-            # star_counts[1:-1] = np.sort(np.random.randint(
-                # 1, high=count_total, size=star_rank - 1))
-            # star_counts = np.diff(star_counts)
-            # star_counts += 1
 
             for star, count in enumerate(star_counts):
                 feature_to_stars = {feature: [star + 1] * int(count)}
@@ -89,6 +77,36 @@ class SyntheticReviewSolicitation(EdmundsReviewSolicitation):
     """
 
 
+def random_alpha_beta():
+    """Randomly create alpha, beta for Beta_Binomial distribution.
+
+    Range: 0.01 -> 100
+    Return:
+        (alpha, beta): tuple
+    """
+    top = 50
+    alpha, beta = random.randint(1, top), random.randint(1, top)
+    if random.random() >= 0.5: alpha /= top
+    if random.random() >= 0.5: beta /= top
+    return (alpha, beta)
+
+
+def beta_binomial(alpha, beta, n):
+    """Beta Binomial Distribution generator.
+
+    Args:
+        alpha: float,
+            parameter of prior Beta distribution
+        beta: float,
+            parameter of prior Beta distribution
+        n: int,
+            number of binomial trial
+    Returns:
+        dist: list of probability of getting k (k = 0...n)
+    """
+    return [beta_binom_pmf(alpha, beta, n, k) for k in range(n + 1)]
+
+
 def beta_binom_pmf(alpha, beta, n, k):
     """Beta Binomial Probability Mass Function.
 
@@ -119,5 +137,4 @@ if __name__ == "__main__":
     alpha = 2
     beta = 2
     n = 10
-    for k in range(11):
-        print(beta_binom_pmf(alpha, beta, n, k))
+    print(beta_binom(alpha, beta, n))

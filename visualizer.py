@@ -131,7 +131,7 @@ def plot_experiment_result(experiment,
                 aspect_to_star_counts=product_to_aspect_stars[product]
                 )
             fig.suptitle(product, fontsize=15, fontweight='bold')
-            savefig(fig, filename)
+            savefig(fig, filename + "_" + str(product))
 
     logger.info('Exported plots to "{}{}*.pdf"'.format(plot_dir, experiment))
 
@@ -277,8 +277,8 @@ def export_cost_of_multi_picks_same_answer(soliconfig_to_stats,
             if not goal.baseline:
                 df[goal_str] = totals
                 for baseline in baselines:
-                    df[goal_str + " / " + baseline] = (
-                        1 - df[goal_str] / df[baseline]) * 100
+                    df[goal_str + " / " + baseline + " (%)"] = (
+                            1 - df[goal_str] / df[baseline]) * 100
 
         metric_answer_to_df[str(metric)] = df
 
@@ -286,7 +286,7 @@ def export_cost_of_multi_picks_same_answer(soliconfig_to_stats,
     with pd.ExcelWriter(filepath) as writer:
         for sheetname, df in metric_answer_to_df.items():
             df.to_excel(writer, sheet_name=sheetname[:31],
-                        float_format="%.2f", freeze_panes=(1, 1))
+                        float_format="%.3f", freeze_panes=(1, 1))
 
 
 def plot_cost_of_multi_picks(axarr,
@@ -565,6 +565,8 @@ if __name__ == '__main__':
     add_arg("--experiment-dir", default="output/",
             help="""Directory of experimental results, i.e. the pickle file
                     (default: output/)""")
+    add_arg("--poll", type=int, default=299,
+            help="last poll")
     add_arg("--conference", default="acm", choices=CONF_TEXT_WIDTHS.keys(),
             help="""Conference name, used for calculating appropriate text
                     width in paper (default='acm').""")
@@ -587,7 +589,7 @@ if __name__ == '__main__':
     plot_experiment_result(
         args.experiment,
         experiment_dir=args.experiment_dir,
-        poll=299,
+        poll=args.poll,
         product_to_aspect_stars=product_to_aspect_stars,
         conference=args.conference,
         scale=args.scale,

@@ -1,8 +1,8 @@
-import logging
 import argparse
-import pickle
 from collections import OrderedDict
 import cProfile
+import logging
+import pickle
 import pstats
 from timeit import default_timer
 
@@ -24,8 +24,8 @@ ch.setFormatter(logging.Formatter('%(asctime)s-%(levelname)s - %(message)s'))
 logger.addHandler(ch)
 
 
-dataset_simulators = {
-    "edmunds": (5, EdmundsReview, EdmundsReviewSolicitation),
+DATASET_SIMULATORS = {
+    "edmunds": (5, EdmundsReview, EdmundsReviewSolicitation),   # 5: star
     "bliu": (6, BliuReview, BliuReviewSolicitation),
     "semeval": (3, SemevalReview, SemevalReviewSolicitation),
     "synthetic": (10, SyntheticReview, SyntheticReviewSolicitation)
@@ -33,7 +33,6 @@ dataset_simulators = {
 
 
 class Scenario(object):
-    __scenarios = {}
 
     def __init__(self, name, soli_configs, metrics,
                  product_to_reviews=None):
@@ -45,25 +44,28 @@ class Scenario(object):
     @classmethod
     def build(cls, name):
         if name == "basic":
-            if name not in cls.__scenarios:
-                soli_configs = SoliConfig.build(
-                    pick_mths=['pick_highest'],
-                    answer_mths=['answer_by_gen'],
-                    optm_goals=[
-                                UncertaintyMetric('expected_rating_var'),
-                                ]
-                    )
-                metrics = [
-                           UncertaintyMetric('expected_rating_var'),
-                           UncertaintyMetric('expected_rating_var',
-                                             aggregate=np.average),
-                           UncertaintyMetric('confidence_interval_len'),
-                           UncertaintyMetric('confidence_interval_len',
-                                             aggregate=np.average)
-                           ]
-                cls.__scenarios[name] = cls(name, soli_configs, metrics)
-
-            return cls.__scenarios[name]
+            soli_configs = SoliConfig.build(
+                pick_mths=['pick_highest'],
+                answer_mths=['answer_by_gen'],
+                optm_goals=[
+                            UncertaintyMetric('expected_uncertainty_drop'),
+                            ]
+                )
+            metrics = [
+                       UncertaintyMetric('expected_rating_var'),
+                       UncertaintyMetric('expected_rating_var',
+                                         aggregate=np.average),
+                       UncertaintyMetric('dirichlet_var_sum'),
+                       UncertaintyMetric('dirichlet_var_sum',
+                                         aggregate=np.average),
+                       UncertaintyMetric('entropy'),
+                       UncertaintyMetric('entropy',
+                                         aggregate=np.average),
+                       UncertaintyMetric('confidence_interval_len'),
+                       UncertaintyMetric('confidence_interval_len',
+                                         aggregate=np.average)
+                       ]
+            return cls(name, soli_configs, metrics)
         elif name == "natural_vs_prepared":
             soli_configs = SoliConfig.build(
                 pick_mths=["pick_highest", "pick_by_user"],
@@ -83,11 +85,13 @@ class Scenario(object):
             return cls(name, soli_configs, metrics)
         elif name == "synthetic":
             scenario = cls.build("basic")
+            scenario.name = name
 
-            FEATURE_COUNT = 7
-            STAR_RANK = 20
-            scenario.product_to_reviews = SyntheticReview.import_dataset(
-                    "fake", star_rank=STAR_RANK, feature_count=FEATURE_COUNT)
+            FEATURE_COUNT = 10
+            STAR_RANK = 10
+            scenario.product_to_reviews = SyntheticReview.import_dataset(None,
+                    star_rank=STAR_RANK, feature_count=FEATURE_COUNT,
+                    randomize=False)
             scenario.star_rank = STAR_RANK
             return scenario
         else:
@@ -131,7 +135,7 @@ def simulate_reviews_soli(product_to_reviews,
                           if len(value) >= review_count_lowbound}
     logger.info('# products simulated: {}'.format(len(product_to_reviews)))
 
-    _, review_cls, review_soli_sim_cls = dataset_simulators[dataset]
+    _, review_cls, review_soli_sim_cls = DATASET_SIMULATORS[dataset]
     seed_features = review_cls.dup_scenario_features if kwargs['duplicate'] \
         else review_cls.seed_features
     product_to_config_stats = {}
@@ -225,7 +229,7 @@ def probe_dataset(file_path, star_rank=5, dataset='edmunds'):
     Returns:
         dataset_profile: data_model.DatasetProfile object
     """
-    _, review_cls, _ = dataset_simulators[dataset]
+    _, review_cls, _ = DATASET_SIMULATORS[dataset]
     product_to_reviews = review_cls.import_dataset(file_path,
                                                    star_rank=star_rank)
     dataset_profile = Review.probe_dataset(product_to_reviews)
@@ -237,7 +241,7 @@ def start_sim(args):
     Attributes:
         args: Namespace object, return by ArgumentParser.parse_args()
     """
-    star_rank, review_cls, _ = dataset_simulators[args.dataset]
+    star_rank, review_cls, _ = DATASET_SIMULATORS[args.dataset]
 
     scenario = Scenario.build(args.scenario)
     if scenario.product_to_reviews:
@@ -292,7 +296,7 @@ if __name__ == '__main__':
             " experiment (default=200)")
     parser.add_argument(
             "--output", default="output",
-            help="output directory (default='output/result.pickle')")
+            help="output file path (default='output/result.pickle')")
     parser.add_argument(
             "--loglevel", default='WARN',
             help="log level (default='WARN')")
