@@ -607,6 +607,42 @@ def expected_rating_var(ratings):
     return feature_var
 
 
+def expected_uncertainty_drop(ratings):
+    """Expected Uncertainty Drop after the next user's answer.
+
+    Given the current "ratings", estimate the drop of "expected_rating_var" or
+    any uncertainty metrics when we get a new rating after asking a new user.
+    The probability of getting s_i stars from the next user is estimated by
+    utilizing the current rating distribution.
+        E[E[Var[r | n + 1]]] = sum(beta_i / beta_0 * Var[r | n, s_i stars])
+
+    Args:
+        ratings: list, numpy array of star
+    Returns:
+        real number
+    """
+    base_criterion = dirichlet_var_sum
+    dirichlet_params = np.array(ratings) + 1
+    beta0 = dirichlet_params.sum()
+    beta = dirichlet_params / beta0
+
+    next_ratings = ratings + np.identity(dirichlet_params.shape[0])
+    next_unertainties = np.apply_along_axis(base_criterion, 1, next_ratings)
+
+    curr_uncertainty = base_criterion(ratings)
+    expected_next_uncertainty = np.sum(beta * next_unertainties)
+    expected_drop = curr_uncertainty - expected_next_uncertainty
+    return expected_drop
+
+
+def entropy(ratings):
+    """Differential entropy of Dirichlet distribution.
+
+    Can be negative, maxima when Dirichlet distribution is uniform.
+    """
+    return stats.dirichlet.entropy(ratings)
+
+
 def pearson_cor_on_flatten(flatten_count_table):
     """Similar to pearson_cor except that the argument is flatten array.
     Args:
