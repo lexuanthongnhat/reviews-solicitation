@@ -108,19 +108,6 @@ class EdmundsReviewSolicitation(ReviewsSolicitation):
     simulation much simpler.
     """
 
-    def answer_by_gen(self, picked_feature):
-        """Answer using sampling star's distribution of this product's reviews.
-        Note: Always have answer
-        Args:
-            picked_feature: datamodel.Feature, returned by pick_method
-        Returns:
-            answered_star: int
-        """
-        star_dist = self.feature_to_star_dist[picked_feature.name]
-        stars = np.arange(1, self.star_rank + 1, 1)
-        answered_star = np.random.choice(stars, p=star_dist)
-        return answered_star
-
     def answer_in_time_order(self, picked_feature):
         """Answer using real reviews sorted in time order.
         Args:

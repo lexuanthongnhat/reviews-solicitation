@@ -36,8 +36,8 @@ class SyntheticReview(Review):
             feature = "feature_" + str(i)
             cls.seed_features.append(feature)
 
-            alpha, beta = BETA_BINO_PARAMS[i, :] if not randomize \
-                                                 else random_alpha_beta()
+            alpha, beta = cls.BETA_BINO_PARAMS[i, :] if not randomize \
+                                                     else random_alpha_beta()
             logger.debug("alpha, beta: {}, {}".format(alpha, beta))
             star_dist = np.array(beta_binomial(alpha, beta, star_rank - 1))
             star_counts = np.ceil(star_dist * 5 * star_rank)

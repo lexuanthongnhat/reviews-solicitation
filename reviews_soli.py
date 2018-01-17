@@ -1,6 +1,7 @@
-from collections import OrderedDict, defaultdict
 from abc import ABC, abstractmethod
+from collections import OrderedDict, defaultdict
 import itertools
+import random
 import warnings
 
 import numpy as np
@@ -46,7 +47,8 @@ class SoliConfig(object):
             optm_goals is None else optm_goals
         configs = []
 
-        pick_baselines = ['pick_random', 'pick_least_count']
+        pick_baselines = ['pick_random', 'pick_least_count',
+                          'pick_like_bandit']
         for pick, answer in itertools.product(pick_baselines, answer_mths):
             configs.append(cls(pick, answer, baseline=True))
 
@@ -108,6 +110,7 @@ class ReviewsSolicitation(ABC):
         self.original_reviews = reviews
         self.reviews = reviews.copy()
         self.star_rank = reviews[0].star_rank
+        self.stars = np.arange(1, self.star_rank + 1, 1)
 
         self.soli_config = soli_config
         self.metrics = metrics
@@ -119,6 +122,10 @@ class ReviewsSolicitation(ABC):
                          for i, feature_name in enumerate(self.seed_features)]
         self.feature_to_star_dist = Review.sample_star_dist(reviews,
                                                             self.features)
+        self.feature_to_rating_generator = {
+                feature: self.rating_generator(self.stars, star_dist)
+                for feature, star_dist in self.feature_to_star_dist.items()
+                }
         self.duplicate = True if kwargs['duplicate'] else False
         if self.duplicate:
             # 2 duplicate features' index in Review.dup_scenario_features
@@ -203,14 +210,15 @@ class ReviewsSolicitation(ABC):
             star = np.random.choice(stars, p=star_dist)
             yield star
 
-    @abstractmethod
     def answer_by_gen(self, picked_feature):
         """Answer using sampling star's distribution of this product's reviews.
         Note: Always have answer
-        Args: picked_feature: datamodel.Feature, returned by pick_method
+        Args:
+            picked_feature: datamodel.Feature, returned by pick_method
         Returns:
             answered_star: int
         """
+        return next(self.feature_to_rating_generator[picked_feature.name])
 
     @abstractmethod
     def answer_in_time_order(self, picked_feature):
@@ -286,6 +294,25 @@ class ReviewsSolicitation(ABC):
             rating_counts[already_picked_idx] = float('inf')
         min_indices = np.where(rating_counts == rating_counts.min())[0]
         return self.features[np.random.choice(min_indices)]
+
+    def pick_like_bandit(self, already_picked_idx, exploit_rate=0.5):
+        """Pick a feature like a multi-armed bandit.
+
+        Inspired by multi-armed bandit problem, this method mimics
+        the Epsilon-greedy strategy:
+            * exploitation phase: in (1 - epsilon) number of trials, choose
+            the highest lever.
+            * exploration phase: in the other "epsilon" time, choose levers
+            randomly.
+        ref: https://en.wikipedia.org/wiki/Multi-armed_bandit
+        """
+        if exploit_rate < 0 or exploit_rate > 1:
+            raise ValueError("exploit_rate = {} while it must be in "
+                             "[0, 1]".format(exploit_rate))
+        if random.random() < exploit_rate:
+            return self.pick_highest(already_picked_idx)
+        else:
+            return self.pick_random(already_picked_idx)
 
     def pick_by_user(self, already_picked_idx):
         """Pick the first feature in the review (contain sorted features)

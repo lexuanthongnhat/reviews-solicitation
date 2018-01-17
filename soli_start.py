@@ -48,6 +48,7 @@ class Scenario(object):
                 pick_mths=['pick_highest'],
                 answer_mths=['answer_by_gen'],
                 optm_goals=[
+                            UncertaintyMetric('expected_rating_var'),
                             UncertaintyMetric('expected_uncertainty_drop'),
                             ]
                 )
