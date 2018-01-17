@@ -283,8 +283,8 @@ if __name__ == '__main__':
             help="Experiment scenario (default='basic')")
     parser.add_argument(
             "--poll-count", type=int, default=-1,
-            help="Number of polls (customers) to ask (default=-1, i.e. number "
-            "of reviews of the product)")
+            help="Number of polls (customers) to ask (default=-1, i.e. number"
+            " of reviews of the product)")
     parser.add_argument(
             "--question-count", type=int, default=1,
             help="Number of questions to ask a customer (default=1)")
@@ -293,7 +293,7 @@ if __name__ == '__main__':
             help="Number of simulation run per product (default=5)")
     parser.add_argument(
             "--review-count-lowbound", type=int, default=200,
-            help="Only consider products with more than this lower bound into "
+            help="Only consider products with more than this lower bound into"
             " experiment (default=200)")
     parser.add_argument(
             "--output", default="output",

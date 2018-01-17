@@ -24,20 +24,20 @@ class DoubtInspector:
     """Explore the properties of rating doubt/uncertainty."""
 
     def __init__(self, doubt_metrics,
-                 star_rank=5, aspect_count=5, run_count=10, user_count=300,
+                 aspect_count=5, randomize_rating=False, star_rank=5,
+                 run_count=10, user_count=300,
                  output="drop.pdf"):
         self.doubt_metrics = doubt_metrics
-        self.star_rank = star_rank
         self.aspect_count = aspect_count
+        self.randomize_rating = randomize_rating
+        self.star_rank = star_rank
         self.run_count = run_count
         self.user_count = user_count
         self.stars = np.arange(1, self.star_rank + 1, 1)
         self.output = output
 
     def plot_doubt_drop(self):
-        aspect_profiles = self._build_aspect_profile(randomize=False)
-        # rating_generators = [self._rating_generator(aspect_profile)
-                             # for aspect_profile in aspect_profiles]
+        aspect_profiles = self._build_aspect_profile()
         rating_generators = [
                 ReviewSoli.rating_generator(self.stars, aspect_profile)
                 for aspect_profile in aspect_profiles]
@@ -54,11 +54,11 @@ class DoubtInspector:
                                np.array(aspect_doubt_drops),
                                np.array(aspect_doubts))
 
-    def _build_aspect_profile(self, randomize=False):
+    def _build_aspect_profile(self):
         """Build rating distribution (profile) of an aspect."""
         aspect_profiles = []
         for i in range(self.aspect_count):
-            alpha, beta = random_alpha_beta() if randomize else \
+            alpha, beta = random_alpha_beta() if self.randomize_rating else \
                           SyntheticReview.BETA_BINO_PARAMS[i, :]
             star_dist = np.array(beta_binomial(alpha, beta,
                                                self.star_rank - 1))
@@ -113,7 +113,7 @@ class DoubtInspector:
             aspect_doubt_drops, aspect_doubts:
                 both are 3d arrays: aspect * metric * user_count
         """
-        np.set_printoptions(precision=2)
+        np.set_printoptions(precision=1)
         metric_count = len(self.doubt_metrics)
         fig, axes = plt.subplots(nrows=metric_count, ncols=2,
                                  figsize=(14, metric_count * 6))
@@ -123,25 +123,31 @@ class DoubtInspector:
             doubts = aspect_doubts[:, i, :]
             for aspect in range(doubt_drops.shape[0]):
                 ax_left.plot(doubt_drops[aspect, :],
-                             label=str(aspect_profiles[aspect]) + " DROP")
+                             label=str(aspect_profiles[aspect]))
+                ax_left.set_title("Uncertainty DROP")
                 ax_right.plot(doubts[aspect, :],
                               label=str(aspect_profiles[aspect]))
+                ax_right.set_title("Uncertainty")
             for ax in axes[i]:
-                ax.set_title(str(metric.__name__))
                 ax.set_xlabel("Number of users asked")
-                ax.set_ylabel("Uncertainty")
+                ax.set_ylabel(str(metric.__name__))
                 ax.legend(loc="upper right")
 
         fig.suptitle("Uncertainty drop of different rating distribution - "
                      "{} stars system - ran {} times".format(
                          self.star_rank, self.run_count))
         fig.savefig(self.output)
+        logger.info("Plot was exported to: {}".format(self.output))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
             description="Rating Doubt/Uncertainty Inspector")
     add_arg = parser.add_argument
+    add_arg("--aspect-count", type=int, default=5,
+            help="Number of aspect simulated, default=5")
+    add_arg("-r", "--randomize-rating", action="store_true",
+            help="Randomize the aspect's rating distribution")
     add_arg("--star-rank", type=int, default=5,
             help="Star system to rate, default=5")
     add_arg("--run-count", type=int, default=100,
@@ -151,6 +157,7 @@ if __name__ == "__main__":
     add_arg("--output", default="plot.pdf",
             help="File path of the output")
     args = parser.parse_args()
+    logger.info(args)
 
     doubt_metrics = [
             uncertainty.expected_rating_var,
@@ -160,6 +167,8 @@ if __name__ == "__main__":
             ]
     doubt_inspector = DoubtInspector(
             doubt_metrics,
+            aspect_count=args.aspect_count,
+            randomize_rating=args.randomize_rating,
             star_rank=args.star_rank,
             run_count=args.run_count,
             user_count=args.user_count,
