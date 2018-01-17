@@ -19,26 +19,25 @@ logger.addHandler(ch)
 class SyntheticReview(Review):
     seed_features = []
     dup_scenario_features = []
+    BETA_BINO_PARAMS = np.array([
+            [1, 1], [20, 1],
+            [0.1, 0.1], [100, 1], [3, 60],
+            [0.2, 0.25], [2, 2.5],
+            [0.1, 0.7], [0.1, 10], [50, 50],
+            [0.01, 0.01], [1, 1.5], [6, 8], [3, 20], [15, 4],
+            [0.5, 1], [ 3, 2.5], [7, 0.2], [5, 25], [5.5, 9]
+        ])
 
     @classmethod
     def import_dataset(cls, dataset_path, star_rank=6, duplicate=False,
                        feature_count=2, randomize=False):
         reviews = []
-        alpha_betas = np.array([
-                [1, 1], [20, 1],
-                [0.1, 0.1], [100, 1], [3, 60],
-                [0.2, 0.25], [2, 2.5],
-                [0.1, 0.7], [0.1, 10], [50, 50],
-                [0.01, 0.01], [1, 1.5], [6, 8], [3, 20], [15, 4],
-                [0.5, 1], [ 3, 2.5], [7, 0.2], [5, 25], [5.5, 9]
-            ])
-
         for i in range(feature_count):
             feature = "feature_" + str(i)
             cls.seed_features.append(feature)
 
-            alpha, beta = alpha_betas[i, :] if not randomize \
-                                            else random_alpha_beta()
+            alpha, beta = BETA_BINO_PARAMS[i, :] if not randomize \
+                                                 else random_alpha_beta()
             logger.debug("alpha, beta: {}, {}".format(alpha, beta))
             star_dist = np.array(beta_binomial(alpha, beta, star_rank - 1))
             star_counts = np.ceil(star_dist * 5 * star_rank)

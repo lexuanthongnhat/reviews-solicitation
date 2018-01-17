@@ -197,6 +197,12 @@ class ReviewsSolicitation(ABC):
                                self.features,
                                criterion_to_prior=self.uncertainty_book.prior)
 
+    @staticmethod
+    def rating_generator(stars, star_dist):
+        while True:
+            star = np.random.choice(stars, p=star_dist)
+            yield star
+
     @abstractmethod
     def answer_by_gen(self, picked_feature):
         """Answer using sampling star's distribution of this product's reviews.
