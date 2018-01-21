@@ -82,6 +82,7 @@ def plot_experiment_result(experiment,
                            experiment_dir="output/",
                            plot_dir="plots/",
                            poll=299,
+                           marker_step=20,
                            product_to_aspect_stars=None,
                            conference="acm",
                            scale=1,
@@ -114,6 +115,7 @@ def plot_experiment_result(experiment,
         product_to_stats, plotted_poll_end=poll, ignore_rating=True)
     fig = plot_sim_stats(soliconfig_to_stats_average,
                          poll=poll,
+                         marker_step=marker_step,
                          plot_rating=False,
                          plot_pdf_prefix=experiment,
                          scale=scale,
@@ -127,6 +129,7 @@ def plot_experiment_result(experiment,
             fig = plot_sim_stats(
                 goal_to_stats,
                 poll=poll,
+                marker_step=marker_step,
                 product=product,
                 aspect_to_star_counts=product_to_aspect_stars[product]
                 )
@@ -137,8 +140,8 @@ def plot_experiment_result(experiment,
 
 
 def plot_sim_stats(soliconfig_to_stats,
-                   poll=100, fig_w=16, subplt_fig_h=5, plot_rating=True,
-                   product=None, aspect_to_star_counts=None,
+                   poll=100, marker_step=20, fig_w=16, subplt_fig_h=5,
+                   plot_rating=True, product=None, aspect_to_star_counts=None,
                    scale=1, conference="acm", ratio=GOLDEN_RATIO,
                    plot_pdf_prefix=None):
     """Plot a product's rating distribution and simulation result statistics.
@@ -222,8 +225,9 @@ def plot_sim_stats(soliconfig_to_stats,
         uncertainty_axarr = [plt.subplot(gs0[row_id + offset, col_id])
                              for row_id in range(metric_count)
                              for col_id in range(uncertainty_col_count)]
-        plot_cost_of_multi_picks(uncertainty_axarr,
-                                 soliconfig_to_stats, poll=poll, answer=answer)
+        plot_cost_of_multi_picks(uncertainty_axarr, soliconfig_to_stats,
+                                 poll=poll, marker_step=marker_step,
+                                 answer=answer)
         if plot_pdf_prefix is not None:
             figure_size = figsize(scale, conference=conference, ratio=ratio)
             plot_cost_of_multi_picks_to_pdfs(
@@ -232,6 +236,7 @@ def plot_sim_stats(soliconfig_to_stats,
                 soliconfig_to_stats,
                 figure_size,
                 poll=poll,
+                marker_step=marker_step,
                 answer=answer)
         export_cost_of_multi_picks_same_answer(
             soliconfig_to_stats,
@@ -293,7 +298,7 @@ def plot_cost_of_multi_picks(axarr,
                              soliconfig_to_stats,
                              answer="answer_by_gen",
                              poll=100,
-                             uncertainty_poll_step=20,
+                             marker_step=20,
                              std_poll_step=10):
     """Plot the uncertainty change of multiple pick method with same answer.
     Args:
@@ -315,7 +320,7 @@ def plot_cost_of_multi_picks(axarr,
             # Plot uncertainty result
             ax = axarr[metric_idx * 2]
             Y = [report.get_uncertainty_total(metric) for report in reports]
-            ax.plot(X[::uncertainty_poll_step], Y[::uncertainty_poll_step],
+            ax.plot(X[::marker_step], Y[::marker_step],
                     label=_to_latex(goal_str),
                     marker=marker,
                     ms=MARKER_SIZE,
@@ -350,7 +355,7 @@ def plot_cost_of_multi_picks_to_pdfs(
         plot_dir="plots/",
         answer="answer_by_gen",
         poll=100,
-        uncertainty_poll_step=5,
+        marker_step=5,
         std_poll_step=10):
     """Export to pdf plot.
 
@@ -361,8 +366,8 @@ def plot_cost_of_multi_picks_to_pdfs(
             for i in range(subplot_count)]
     axarr = [fig.add_subplot(1, 1, 1) for fig in figs]
 
-    plot_cost_of_multi_picks(axarr,
-                             soliconfig_to_stats, poll=poll, answer=answer)
+    plot_cost_of_multi_picks(axarr, soliconfig_to_stats,
+                             poll=poll, marker_step=marker_step, answer=answer)
 
     for filename, fig in zip(filenames, figs):
         fig.patch.set_alpha(0.)
@@ -567,6 +572,8 @@ if __name__ == '__main__':
                     (default: output/)""")
     add_arg("--poll", type=int, default=299,
             help="last poll")
+    add_arg("--marker-step", type=int, default=20,
+            help="Interval to print marker in the plot, default=20")
     add_arg("--conference", default="acm", choices=CONF_TEXT_WIDTHS.keys(),
             help="""Conference name, used for calculating appropriate text
                     width in paper (default='acm').""")
@@ -590,6 +597,7 @@ if __name__ == '__main__':
         args.experiment,
         experiment_dir=args.experiment_dir,
         poll=args.poll,
+        marker_step=args.marker_step,
         product_to_aspect_stars=product_to_aspect_stars,
         conference=args.conference,
         scale=args.scale,

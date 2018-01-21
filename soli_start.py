@@ -64,6 +64,9 @@ class Scenario(object):
                                          aggregate=np.average),
                        UncertaintyMetric('confidence_interval_len'),
                        UncertaintyMetric('confidence_interval_len',
+                                         aggregate=np.average),
+                       UncertaintyMetric('kl_divergence'),
+                       UncertaintyMetric('kl_divergence',
                                          aggregate=np.average)
                        ]
             return cls(name, soli_configs, metrics)

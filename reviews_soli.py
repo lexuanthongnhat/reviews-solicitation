@@ -122,6 +122,8 @@ class ReviewsSolicitation(ABC):
                          for i, feature_name in enumerate(self.seed_features)]
         self.feature_to_star_dist = Review.sample_star_dist(reviews,
                                                             self.features)
+        self.star_dists = [self.feature_to_star_dist[feature.name]
+                           for feature in self.features]
         self.feature_to_rating_generator = {
                 feature: self.rating_generator(self.stars, star_dist)
                 for feature, star_dist in self.feature_to_star_dist.items()
@@ -136,6 +138,7 @@ class ReviewsSolicitation(ABC):
                 self.star_rank,
                 len(self.features),
                 optm_goal=soli_config.optm_goal,
+                rating_truth_dists=self.star_dists,
                 dataset_profile=dataset_profile)
         self.poll_to_report = OrderedDict()
 

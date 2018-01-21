@@ -106,6 +106,8 @@ class UncertaintyBook(object):
             number of star levels
         feature_count: int,
             number of features
+        rating_truth_dists: list of star_dist (list) or 2d np.array
+            truth distribution used for generating simulated rating
         optm_goal: UncertaintyMetric
         dataset_profile: SimulationStats object, default=None
             dataset's profile
@@ -122,7 +124,9 @@ class UncertaintyBook(object):
             store prior for weighted metric
     """
 
-    def __init__(self, star_rank, feature_count, optm_goal=None,
+    def __init__(self, star_rank, feature_count,
+                 rating_truth_dists=None,
+                 optm_goal=None,
                  dataset_profile=None):
         if star_rank < 2 or feature_count < 1:
             raise ValueError('Invalid values of star_rank (>= 2) or '
@@ -131,6 +135,7 @@ class UncertaintyBook(object):
         self.star_rank = star_rank
         self.feature_count = feature_count
         self.optm_goal = optm_goal
+        self.rating_truth_dists = rating_truth_dists
         self.dataset_profile = dataset_profile
 
         if dataset_profile:
@@ -215,6 +220,11 @@ class UncertaintyBook(object):
             credible_intervals_ws = aspect_vars * z
             indept_uncertainties = credible_intervals_ws <= width_threshold
             return (indept_uncertainties, indept_uncertainties)
+
+        if criterion == "kl_divergence":
+            self.criterion_to_cache_unc[criterion] = np.array(
+                    [kl_divergence(truth_dist, self.ratings[i, :])
+                     for i, truth_dist in enumerate(self.rating_truth_dists)])
 
         if criterion not in self.criterion_to_cache_unc:
             self.criterion_to_cache_unc[criterion] = np.apply_along_axis(
@@ -621,7 +631,8 @@ def expected_uncertainty_drop(ratings):
     Returns:
         real number
     """
-    base_criterion = dirichlet_var_sum
+    # base_criterion = dirichlet_var_sum
+    base_criterion = expected_rating_var
     dirichlet_params = np.array(ratings) + 1
     beta0 = dirichlet_params.sum()
     beta = dirichlet_params / beta0
@@ -641,6 +652,25 @@ def entropy(ratings):
     Can be negative, maxima when Dirichlet distribution is uniform.
     """
     return stats.dirichlet.entropy(ratings)
+
+
+def kl_divergence(truth_dist, ratings):
+    """Kullback-Leibler divergence of expected rating posterior to the truth.
+
+    Note: scipy.stats.entropy returns KL instead of normal entropy if 2
+    arguments are served.
+    Args:
+        truth_dist: 1d numpy array
+            the truth distribution used for generating star rating
+        ratings: 1d numpy array of rating counts
+    Return:
+        Kullback-Leibler divergence of the dirichet mean posterior from truth
+            assume ratings has a dirichlet posterior that has posterior mean
+                        KL(truth_dist | posterior_mean)
+    """
+    dirich_params = ratings + 1
+    posterior_mean = dirich_params / dirich_params.sum()
+    return stats.entropy(truth_dist, posterior_mean)
 
 
 def pearson_cor_on_flatten(flatten_count_table):
