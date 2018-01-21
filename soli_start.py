@@ -56,18 +56,15 @@ class Scenario(object):
                        UncertaintyMetric('expected_rating_var'),
                        UncertaintyMetric('expected_rating_var',
                                          aggregate=np.average),
-                       UncertaintyMetric('dirichlet_var_sum'),
-                       UncertaintyMetric('dirichlet_var_sum',
+                       UncertaintyMetric('kl_divergence'),
+                       UncertaintyMetric('kl_divergence',
+                                         aggregate=np.average)
+                       UncertaintyMetric('confidence_interval_len'),
+                       UncertaintyMetric('confidence_interval_len',
                                          aggregate=np.average),
                        UncertaintyMetric('entropy'),
                        UncertaintyMetric('entropy',
                                          aggregate=np.average),
-                       UncertaintyMetric('confidence_interval_len'),
-                       UncertaintyMetric('confidence_interval_len',
-                                         aggregate=np.average),
-                       UncertaintyMetric('kl_divergence'),
-                       UncertaintyMetric('kl_divergence',
-                                         aggregate=np.average)
                        ]
             return cls(name, soli_configs, metrics)
         elif name == "natural_vs_prepared":
@@ -91,8 +88,8 @@ class Scenario(object):
             scenario = cls.build("basic")
             scenario.name = name
 
-            FEATURE_COUNT = 10
-            STAR_RANK = 10
+            FEATURE_COUNT = 3
+            STAR_RANK = 6
             scenario.product_to_reviews = SyntheticReview.import_dataset(None,
                     star_rank=STAR_RANK, feature_count=FEATURE_COUNT,
                     randomize=False)
