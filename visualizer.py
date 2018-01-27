@@ -13,6 +13,7 @@ import pandas as pd
 import soli_start
 from uncertainty import expected_rating_var
 from bliu import BliuReview
+from synthetic import SyntheticReview
 
 
 logger = logging.getLogger(__name__)
@@ -80,10 +81,10 @@ def _to_latex(raw_str):
 
 def plot_experiment_result(experiment,
                            experiment_dir="output/",
+                           dataset="edmunds",
                            plot_dir="plots/",
                            poll=299,
                            marker_step=20,
-                           product_to_aspect_stars=None,
                            conference="acm",
                            scale=1,
                            ratio=GOLDEN_RATIO):
@@ -97,13 +98,18 @@ def plot_experiment_result(experiment,
             where to store exported plots
         poll: int, default=299
             the end poll to plot
-        product_to_aspect_stars: dict, default=None
-            if available, then plot for each product.
-            E.g., bliu dataset
     """
+    # product_to_aspect_stars: dict, default=None
+    #     if available, then plot for each product, e.g., bliu dataset
+    product_to_aspect_stars = None
+    if dataset == "bliu":
+        _, product_to_aspect_stars = BliuReview.preprocess_dataset(
+            "anno-datasets/bliu-datasets")
+    if dataset == "synthetic":
+        product_to_aspect_stars = SyntheticReview.import_synthetic_profile()
+
     filename = plot_dir + experiment
     experiment_path = experiment_dir + experiment + ".pickle"
-
     with open(experiment_path, 'rb') as f:
         product_to_stats = pickle.load(f)
 
@@ -169,7 +175,10 @@ def plot_sim_stats(soliconfig_to_stats,
     # grid layout of 2 plot types
     uncertainty_col_count = 2
     uncertainty_row_count = metric_count * answer_count
-    rating_row_count = answer_count + 4   # 3: std, violin, bar plots
+
+    probe_poll_count = 6    # Number of polls to plot ratings at.
+    # 4: first for dataset star counts, 3 for violet, sd and variance plots
+    rating_row_count = answer_count * probe_poll_count + 4
     uncertainty_rating_subplt_ratio = 1.6
 
     uncertainty_h_unit = uncertainty_row_count
@@ -210,7 +219,7 @@ def plot_sim_stats(soliconfig_to_stats,
         rating_row_id += 3
 
         axarr = [plt.subplot(gs1[rating_row_id + i, :])
-                 for i in range(answer_count)]
+                 for i in range(answer_count * probe_poll_count)]
         plot_picked_features(axarr, soliconfig_to_stats,
                              answer_count=answer_count, poll=poll,
                              sorted_features=aspects)
@@ -404,6 +413,8 @@ def plot_picked_features(axarr, soliconfig_to_stats,
         poll: int, default=100,
         sorted_features: list of str
     """
+    probe_poll_count = len(axarr) // answer_count
+    probe_poll_interval = poll // probe_poll_count
     features = list(soliconfig_to_stats.values())[0].features
     if not sorted_features:
         features = sorted(features, key=lambda f: f.name)
@@ -415,29 +426,32 @@ def plot_picked_features(axarr, soliconfig_to_stats,
     answer_to_goal_stats = partition_goal_by_answer(soliconfig_to_stats)
     subpl_idx = 0
     for answer, goal_to_stats in answer_to_goal_stats.items():
-        feature_to_per_config_counts = get_aspect_picked_counts(
-            goal_to_stats, features, poll=poll)
-        ax = axarr[subpl_idx]
-        count_max = 0
-        count_min = float("inf")
-        for i, config in enumerate(configs):
-            Y = [config_to_count[config]
-                 for config_to_count in feature_to_per_config_counts.values()]
-            ax.plot(X, Y, label=_to_latex(config.pick_goal_str()),
-                    marker=MARKERS[i],
-                    ms=MARKER_SIZE,
-                    markeredgewidth=MARKER_WIDTH)
-            count_max = max(count_max, np.max(Y))
-            count_min = min(count_min, np.min(Y))
+        for i in range(1, probe_poll_count + 1):
+            probe_poll = probe_poll_interval * i + 1
 
-        ax.set_xticks(X)
-        ax.set_xticklabels([feature.name for feature in features])
-        ax.set_title("2. Rating count after {} polls ({})".format(
-            poll, _to_latex(answer)))
-        ax.set_ylabel("\# Ratings")
-        ax.legend(loc='upper left', ncol=5)
-        ax.set_ylim(count_min * 0.95, count_max * 1.03)
-        subpl_idx += 1
+            feature_to_per_config_counts = get_aspect_picked_counts(
+                goal_to_stats, features, poll=probe_poll)
+            ax = axarr[subpl_idx]
+            count_max = 0
+            count_min = float("inf")
+            for i, config in enumerate(configs):
+                Y = [config_to_count[config]
+                     for config_to_count in feature_to_per_config_counts.values()]
+                ax.plot(X, Y, label=_to_latex(config.pick_goal_str()),
+                        marker=MARKERS[i],
+                        ms=MARKER_SIZE,
+                        markeredgewidth=MARKER_WIDTH)
+                count_max = max(count_max, np.max(Y))
+                count_min = min(count_min, np.min(Y))
+
+            ax.set_xticks(X)
+            ax.set_xticklabels([feature.name for feature in features])
+            ax.set_title("2. Rating count after {} polls ({})".format(
+                probe_poll, _to_latex(answer)))
+            ax.set_ylabel("\# Ratings")
+            ax.legend(loc='upper left', ncol=5)
+            ax.set_ylim(count_min * 0.95, count_max * 1.03)
+            subpl_idx += 1
 
 
 def get_aspect_picked_counts(soliconfig_to_stats, sorted_features, poll=100):
@@ -588,17 +602,12 @@ if __name__ == '__main__':
     # Style for publication friendly plots
     set_style()
 
-    product_to_aspect_stars = None
-    if args.dataset == "bliu":
-        _, product_to_aspect_stars = BliuReview.preprocess_dataset(
-            "anno-datasets/bliu-datasets")
-
     plot_experiment_result(
         args.experiment,
         experiment_dir=args.experiment_dir,
+        dataset=args.dataset,
         poll=args.poll,
         marker_step=args.marker_step,
-        product_to_aspect_stars=product_to_aspect_stars,
         conference=args.conference,
         scale=args.scale,
         ratio=args.ratio

@@ -47,8 +47,13 @@ class SoliConfig(object):
             optm_goals is None else optm_goals
         configs = []
 
-        pick_baselines = ['pick_random', 'pick_least_count',
-                          'pick_like_bandit']
+        pick_baselines = ['pick_random', 'pick_least_count']
+        # Multi-armed bandit inspired pick need optimization goal for its own
+        # pick_highest usage
+        for answer in answer_mths:
+            configs.append(cls('pick_like_bandit', answer,
+                               optm_goal=optm_goals[0]))
+
         for pick, answer in itertools.product(pick_baselines, answer_mths):
             configs.append(cls(pick, answer, baseline=True))
 

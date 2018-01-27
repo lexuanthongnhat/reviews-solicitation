@@ -20,12 +20,13 @@ class SyntheticReview(Review):
     seed_features = []
     dup_scenario_features = []
     BETA_BINO_PARAMS = np.array([
-            [1, 1], [0.1, 0.1], [100, 1],
+            [0.1, 0.1], [100, 1], [1, 1],
             [3, 60], [0.2, 0.25], [2, 2.5],
             [0.1, 0.7], [0.1, 10], [50, 50],
             [0.01, 0.01], [1, 1.5], [6, 8], [3, 20], [15, 4],
             [0.5, 1], [ 3, 2.5], [7, 0.2], [5, 25], [5.5, 9]
         ])
+    PROFILE_PATH = "output/synthetic_data.pickle"
 
     @classmethod
     def import_dataset(cls, dataset_path, star_rank=6, duplicate=False,
@@ -46,8 +47,8 @@ class SyntheticReview(Review):
                 review = cls(feature_to_stars, star_rank=star_rank)
                 reviews.append(review)
 
-        product_to_reviews = {"Synthetic Product": reviews}
-        with open("output/synthetic_data.pickle", "wb") as result_file:
+        product_to_reviews = {"Synthetic": reviews}
+        with open(cls.PROFILE_PATH, "wb") as result_file:
             pickle.dump(cls.probe_synthetic(product_to_reviews), result_file)
 
         return product_to_reviews
@@ -66,6 +67,12 @@ class SyntheticReview(Review):
                             aspect_to_star_counts[feature][star] = 0
                         aspect_to_star_counts[feature][star] += 1
             product_to_aspect_stars[product] = aspect_to_star_counts
+        return product_to_aspect_stars
+
+    @classmethod
+    def import_synthetic_profile(cls):
+        with open(cls.PROFILE_PATH, 'rb') as f:
+            product_to_aspect_stars = pickle.load(f)
         return product_to_aspect_stars
 
 

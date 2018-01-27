@@ -276,7 +276,7 @@ class UncertaintyBook(object):
 
         report = UncertaintyReport(
             metric_to_total=metric_to_total,
-            ratings=self.ratings,
+            ratings=np.copy(self.ratings - 1),
             criterion_to_uncertainties=criterion_to_uncertainties,
             correlations=self.correlations_cache)
         return report
@@ -617,7 +617,7 @@ def expected_rating_var(ratings):
     return feature_var
 
 
-def expected_uncertainty_drop(ratings):
+def expected_uncertainty_drop(ratings, base_criterion = expected_rating_var):
     """Expected Uncertainty Drop after the next user's answer.
 
     Given the current "ratings", estimate the drop of "expected_rating_var" or
@@ -631,8 +631,6 @@ def expected_uncertainty_drop(ratings):
     Returns:
         real number
     """
-    # base_criterion = dirichlet_var_sum
-    base_criterion = expected_rating_var
     dirichlet_params = np.array(ratings) + 1
     beta0 = dirichlet_params.sum()
     beta = dirichlet_params / beta0

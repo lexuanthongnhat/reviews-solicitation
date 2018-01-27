@@ -58,12 +58,14 @@ class Scenario(object):
                                          aggregate=np.average),
                        UncertaintyMetric('kl_divergence'),
                        UncertaintyMetric('kl_divergence',
-                                         aggregate=np.average)
+                                         aggregate=np.average),
                        UncertaintyMetric('confidence_interval_len'),
                        UncertaintyMetric('confidence_interval_len',
                                          aggregate=np.average),
                        UncertaintyMetric('entropy'),
                        UncertaintyMetric('entropy',
+                                         aggregate=np.average),
+                       UncertaintyMetric('passed_credible_interval',
                                          aggregate=np.average),
                        ]
             return cls(name, soli_configs, metrics)
@@ -88,7 +90,7 @@ class Scenario(object):
             scenario = cls.build("basic")
             scenario.name = name
 
-            FEATURE_COUNT = 3
+            FEATURE_COUNT = 2
             STAR_RANK = 6
             scenario.product_to_reviews = SyntheticReview.import_dataset(None,
                     star_rank=STAR_RANK, feature_count=FEATURE_COUNT,
