@@ -334,10 +334,14 @@ def plot_cost_of_multi_picks(axarr,
                     marker=marker,
                     ms=MARKER_SIZE,
                     markeredgewidth=MARKER_WIDTH)
-            ax.set_title('Unreliability Level ({})'.format(
-                _to_latex(answer)))
             ax.set_ylabel(_to_latex(str(metric)))
-            ax.set_xlabel("Poll")
+            ax.set_xlabel("Number of reviews")
+            if metric.ratio:
+                # avoid overlapping in case of high_confidence_ratio metric
+                ax.legend(loc='lower right')
+            else:
+                ax.legend(loc='upper right')
+
 
             # Plot standard deviation
             ax_std = axarr[metric_idx * 2 + 1]
@@ -347,13 +351,9 @@ def plot_cost_of_multi_picks(axarr,
                         marker=marker,
                         ms=MARKER_SIZE,
                         markeredgewidth=MARKER_WIDTH)
-            ax_std.set_title("Method's stability ({})".format(
-                _to_latex(answer)))
             ax_std.set_ylabel("standard deviation")
-            ax_std.set_xlabel("Poll")
-
-    for ax in axarr:
-        ax.legend(loc='upper right')
+            ax_std.set_xlabel("Number of reviews")
+            ax_std.legend(loc='upper right')
 
 
 def plot_cost_of_multi_picks_to_pdfs(
@@ -437,7 +437,10 @@ def plot_picked_features(axarr, soliconfig_to_stats,
             for i, config in enumerate(configs):
                 Y = [config_to_count[config]
                      for config_to_count in feature_to_per_config_counts.values()]
-                ax.plot(X, Y, label=_to_latex(config.pick_goal_str()),
+                correlation = goal_to_stats[config].correlation_at(probe_poll)
+                ax.plot(X, Y,
+                        label=_to_latex(config.pick_goal_str()) + ", cor:\n" +\
+                                str(correlation),
                         marker=MARKERS[i],
                         ms=MARKER_SIZE,
                         markeredgewidth=MARKER_WIDTH)
@@ -445,7 +448,8 @@ def plot_picked_features(axarr, soliconfig_to_stats,
                 count_min = min(count_min, np.min(Y))
 
             ax.set_xticks(X)
-            ax.set_xticklabels([feature.name for feature in features])
+            ax.set_xticklabels([_to_latex(feature.name)
+                                for feature in features])
             ax.set_title("2. Rating count after {} polls ({})".format(
                 probe_poll, _to_latex(answer)))
             ax.set_ylabel("\# Ratings")
@@ -601,6 +605,7 @@ if __name__ == '__main__':
 
     # Style for publication friendly plots
     set_style()
+    np.set_printoptions(precision=1)
 
     plot_experiment_result(
         args.experiment,

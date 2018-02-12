@@ -1,17 +1,16 @@
 #!/bin/bash
 
-RUN=200
+RUN=100
 STAR=6
 POLL=200
-ASPECT=2
+ASPECT=3
 
 PLOT_DIR='plots/'
 DROPBOX="${HOME}/Dropbox/testbox/review_soli/"
 
 #RANDOMIZE='-r'
 RANDOMIZE=''
-if [[ (! -z "$RANDOMIZE") && $RANDOMIZE == '-r' ]]
-then
+if [[ (! -z "$RANDOMIZE") && $RANDOMIZE == '-r' ]]; then
   R_SUFFIX=_random
 else
   R_SUFFIX=

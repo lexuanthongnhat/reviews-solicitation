@@ -212,6 +212,7 @@ if __name__ == "__main__":
             unc.dirichlet_var_sum,
             unc.confidence_interval_len,
             unc.entropy,
+            unc.shannon_entropy,
             unc.kl_divergence
             ]
     doubt_inspector = DoubtInspector(

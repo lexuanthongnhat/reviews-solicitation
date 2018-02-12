@@ -48,12 +48,6 @@ class SoliConfig(object):
         configs = []
 
         pick_baselines = ['pick_random', 'pick_least_count']
-        # Multi-armed bandit inspired pick need optimization goal for its own
-        # pick_highest usage
-        for answer in answer_mths:
-            configs.append(cls('pick_like_bandit', answer,
-                               optm_goal=optm_goals[0]))
-
         for pick, answer in itertools.product(pick_baselines, answer_mths):
             configs.append(cls(pick, answer, baseline=True))
 
@@ -138,6 +132,11 @@ class ReviewsSolicitation(ABC):
             # 2 duplicate features' index in Review.dup_scenario_features
             self.duplicate_feature_idx = [-1, -2]
 
+        if len(self.features) < self.question_count:
+            raise ValueError("The number of features ({}) is smaller than the "
+                             "number of questions to ask per poll ({})".format(
+                                 len(self.features), self.question_count))
+
         # Keep track feature's uncertainty
         self.uncertainty_book = UncertaintyBook(
                 self.star_rank,
@@ -153,19 +152,21 @@ class ReviewsSolicitation(ABC):
         """Simulate the asking-aswering process."""
         for i in range(self.poll_count):
             self.uncertainty_book.refresh_uncertainty()
-            # Keep track in case of answer_in_time_order, i.e. get all answers
-            # from a single real review
-            self.num_waiting_answers = self.question_count
 
             # Ask up-to-k questions
+            local_question_count = self.question_count
             if self.soli_config.answer == "answer_almost_real":
                 next_review = self.reviews[0] if self.reviews else \
                         self.original_reviews[0]
                 if self.question_count > len(next_review.features):
-                    self.question_count = len(next_review.features)
+                    local_question_count = len(next_review.features)
+
+            # Keep track in case of answer_in_time_order, i.e. get all answers
+            # from a single real review
+            self.num_waiting_answers = local_question_count
             already_picked_idx = []
             rated_features = []
-            for q in range(self.question_count):
+            for q in range(local_question_count):
                 self.uncertainty_book.refresh_uncertainty()
                 picked_feature = self.__getattribute__(self.soli_config.pick)(
                         already_picked_idx)
@@ -422,6 +423,9 @@ class SimulationStats(object):
 
         stat_str += '/no_answer_count={}'.format(self.no_answer_count)
         return stat_str
+
+    def correlation_at(self, poll):
+        return self.poll_to_report[poll].correlations
 
     @classmethod
     def average_statses(cls, sim_statses,

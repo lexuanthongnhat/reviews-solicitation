@@ -6,7 +6,7 @@ Key file: `soli_start.py`
 
 Get help: `python soli_start.py --help`
 
-Some typical runs can be found in `start.sh` script
+Some typical runs can be found in `start.sh`, `pipeline.sh` script
 
 ## To plot experimental results
 

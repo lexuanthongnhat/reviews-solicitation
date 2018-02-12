@@ -4,6 +4,7 @@ from collections import OrderedDict, defaultdict
 
 import numpy as np
 import scipy.stats as stats
+from scipy.special import gammaln, psi
 
 
 class UncertaintyMetric(object):
@@ -24,14 +25,17 @@ class UncertaintyMetric(object):
     __metrics = []
 
     def __init__(self, criterion, weighted=False, correlated=False,
-                 cor_norm_factor=1.0, aggregate=np.max):
+                 cor_norm_factor=1.0, aggregate=np.max, ratio=False):
         self.criterion = criterion
         self.weighted = weighted
         self.correlated = correlated
         self.cor_norm_factor = cor_norm_factor
         self.aggregate = aggregate
+        self.ratio = ratio      # hack: high_confidence_ratio
 
     def __repr__(self):
+        if self.ratio:
+            return self.show()
         return self.show(show_aggregate=True)
 
     def show(self, show_aggregate=False):
@@ -206,19 +210,22 @@ class UncertaintyBook(object):
             indept_uncertainties = self.criterion_to_cache_unc[criterion]
             return (indept_uncertainties, indept_uncertainties)
 
-        if criterion == "passed_credible_interval":
+        if criterion == "high_confidence_ratio":
             # Count the number of features that have crediable interval width
             # smaller than a threshold, e.g. 1 star
             z = 1.96    # 95% confidence
-            width_threshold = self.star_rank / 20
-            base_criterion = "expected_rating_var"
+            width_threshold = 1
+            # width_threshold = self.star_rank / 5
+            base_criterion = "confidence_interval_len"
+            # base_criterion = "expected_rating_var"
             if base_criterion not in self.criterion_to_cache_unc:
                 self.criterion_to_cache_unc[base_criterion] = \
                         np.apply_along_axis(globals()[base_criterion], 1,
                                             self.ratings)
             aspect_vars = np.copy(self.criterion_to_cache_unc[base_criterion])
-            credible_intervals_ws = aspect_vars * z
-            indept_uncertainties = credible_intervals_ws <= width_threshold
+            # interval_lens = aspect_vars * z
+            interval_lens = aspect_vars
+            indept_uncertainties = interval_lens <= width_threshold
             return (indept_uncertainties, indept_uncertainties)
 
         if criterion == "kl_divergence":
@@ -451,7 +458,7 @@ class UncertaintyReport(object):
             report_average.metric_to_std[metric] = np.std(uncrtnty_totals)
 
         cor_average = None
-        if reports and reports[0].correlations:
+        if reports and reports[0].correlations is not None:
             cor_average = sum([report.correlations for report in reports])
             cor_average = cor_average / report_count
 
@@ -550,10 +557,11 @@ def distribution_change(ratings, prev_ratings):
     Returns:
         uncertainties: 1d np array
     """
-    norm_ratings = ratings / ratings.sum(axis=1).reshape(-1, 1)
-    norm_prev_ratings = prev_ratings / prev_ratings.sum(axis=1).reshape(-1, 1)
-    norm_diff = norm_ratings - norm_prev_ratings
-    uncertainties = np.linalg.norm(norm_diff, axis=1)
+    def _distance(curr, prev):
+        return (stats.entropy(curr, prev) + stats.entropy(prev, curr)) / 2
+
+    uncertainties = np.array([_distance(curr, prev_ratings[i, :])
+                              for i, curr in enumerate(ratings)])
     uncertainties[np.all(ratings == prev_ratings, axis=1)] = \
         np.max(uncertainties)
     return uncertainties
@@ -649,7 +657,11 @@ def entropy(ratings):
 
     Can be negative, maxima when Dirichlet distribution is uniform.
     """
-    return stats.dirichlet.entropy(ratings)
+    return stats.dirichlet.entropy(ratings + 1)
+
+
+def shannon_entropy(ratings):
+    return stats.entropy(ratings)
 
 
 def kl_divergence(truth_dist, ratings):
@@ -669,6 +681,22 @@ def kl_divergence(truth_dist, ratings):
     dirich_params = ratings + 1
     posterior_mean = dirich_params / dirich_params.sum()
     return stats.entropy(truth_dist, posterior_mean)
+
+
+def kl_of_dirs(alpha, beta):
+    """Kullback-Leibler divergence between two Dirichlet distribution.
+    """
+    alpha_0 = np.sum(alpha)
+    beta_0 = np.sum(beta)
+    kl = gammaln(alpha_0) - gammaln(beta_0) - \
+            np.sum(gammaln(alpha)) + np.sum(gammaln(beta)) + \
+            np.sum((alpha - beta) * (psi(alpha) - psi(alpha_0)))
+    return kl
+
+
+def sym_kl_of_dirs(alpha, beta):
+    m = (alpha + beta) / 2
+    return (kl_of_dirs(alpha, m) + kl_of_dirs(beta, m)) / 2
 
 
 def pearson_cor_on_flatten(flatten_count_table):

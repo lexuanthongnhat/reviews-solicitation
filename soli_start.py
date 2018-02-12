@@ -28,7 +28,7 @@ DATASET_SIMULATORS = {
     "edmunds": (5, EdmundsReview, EdmundsReviewSolicitation),   # 5: star
     "bliu": (6, BliuReview, BliuReviewSolicitation),
     "semeval": (3, SemevalReview, SemevalReviewSolicitation),
-    "synthetic": (10, SyntheticReview, SyntheticReviewSolicitation)
+    "synthetic": (6, SyntheticReview, SyntheticReviewSolicitation)
 }
 
 
@@ -43,33 +43,23 @@ class Scenario(object):
 
     @classmethod
     def build(cls, name):
+        metrics = [
+                   UncertaintyMetric('expected_rating_var'),
+                   UncertaintyMetric('confidence_interval_len'),
+                   UncertaintyMetric('high_confidence_ratio',
+                                     aggregate=np.average, ratio=True),
+                   ]
         if name == "basic":
             soli_configs = SoliConfig.build(
                 pick_mths=['pick_highest'],
                 answer_mths=['answer_by_gen'],
                 optm_goals=[
                             UncertaintyMetric('expected_rating_var'),
-                            UncertaintyMetric('expected_uncertainty_drop'),
+                            # UncertaintyMetric('expected_uncertainty_drop'),
                             ]
                 )
-            metrics = [
-                       UncertaintyMetric('expected_rating_var'),
-                       UncertaintyMetric('expected_rating_var',
-                                         aggregate=np.average),
-                       UncertaintyMetric('kl_divergence'),
-                       UncertaintyMetric('kl_divergence',
-                                         aggregate=np.average),
-                       UncertaintyMetric('confidence_interval_len'),
-                       UncertaintyMetric('confidence_interval_len',
-                                         aggregate=np.average),
-                       UncertaintyMetric('entropy'),
-                       UncertaintyMetric('entropy',
-                                         aggregate=np.average),
-                       UncertaintyMetric('passed_credible_interval',
-                                         aggregate=np.average),
-                       ]
             return cls(name, soli_configs, metrics)
-        elif name == "natural_vs_prepared":
+        elif name == "passive_vs_active":
             soli_configs = SoliConfig.build(
                 pick_mths=["pick_highest", "pick_by_user"],
                 answer_mths=['answer_almost_real'],
@@ -77,20 +67,12 @@ class Scenario(object):
                             UncertaintyMetric('expected_rating_var'),
                             ]
                 )
-            metrics = [
-                       UncertaintyMetric('expected_rating_var'),
-                       UncertaintyMetric('expected_rating_var',
-                                         aggregate=np.average),
-                       UncertaintyMetric('confidence_interval_len'),
-                       UncertaintyMetric('confidence_interval_len',
-                                         aggregate=np.average)
-                       ]
             return cls(name, soli_configs, metrics)
         elif name == "synthetic":
             scenario = cls.build("basic")
             scenario.name = name
 
-            FEATURE_COUNT = 2
+            FEATURE_COUNT = 3
             STAR_RANK = 6
             scenario.product_to_reviews = SyntheticReview.import_dataset(None,
                     star_rank=STAR_RANK, feature_count=FEATURE_COUNT,
@@ -143,7 +125,7 @@ def simulate_reviews_soli(product_to_reviews,
         else review_cls.seed_features
     product_to_config_stats = {}
     for product, reviews in product_to_reviews.items():
-        logger.debug("Running over '{}'".format(product))
+        logger.info("Running over '{}'".format(product))
         # different aspects set for each product
         if dataset == 'bliu' or dataset == 'semeval':
             seed_features = set([feature for review in reviews
@@ -315,7 +297,7 @@ if __name__ == '__main__':
         args.question_count = 2
 
     logger.setLevel(getattr(logging, args.loglevel.upper()))
-    logger.debug("args: {}".format(args))
+    logger.info("args: {}".format(args))
 
     if args.profile:
         profile = cProfile.Profile()
