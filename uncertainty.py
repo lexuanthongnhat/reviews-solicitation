@@ -71,6 +71,16 @@ class UncertaintyMetric(object):
                      self.cor_norm_factor, str(self.aggregate)))
 
     @classmethod
+    def metrics_standard(cls):
+        """List of standard, un-correlated metrics."""
+        return [
+                UncertaintyMetric('expected_rating_var'),
+                UncertaintyMetric('confidence_interval_len'),
+                UncertaintyMetric(
+                    'high_confidence_ratio', aggregate=np.average, ratio=True),
+                ]
+
+    @classmethod
     def metrics(cls):
         if not cls.__metrics:
             cls.__metrics.append(cls('dirichlet_var_sum', weighted=False,
@@ -142,7 +152,7 @@ class UncertaintyBook(object):
         self.rating_truth_dists = rating_truth_dists
         self.dataset_profile = dataset_profile
 
-        if dataset_profile:
+        if dataset_profile:         # only for weighted metrics
             self._init_prior(dataset_profile)
 
         self.independent_uncertainties = np.zeros(feature_count)
@@ -213,7 +223,7 @@ class UncertaintyBook(object):
         if criterion == "high_confidence_ratio":
             # Count the number of features that have crediable interval width
             # smaller than a threshold, e.g. 1 star
-            z = 1.96    # 95% confidence
+            # z = 1.96    # 95% confidence
             width_threshold = 1
             # width_threshold = self.star_rank / 5
             base_criterion = "confidence_interval_len"
@@ -625,7 +635,7 @@ def expected_rating_var(ratings):
     return feature_var
 
 
-def expected_uncertainty_drop(ratings, base_criterion = expected_rating_var):
+def expected_uncertainty_drop(ratings, base_criterion=expected_rating_var):
     """Expected Uncertainty Drop after the next user's answer.
 
     Given the current "ratings", estimate the drop of "expected_rating_var" or
@@ -689,8 +699,8 @@ def kl_of_dirs(alpha, beta):
     alpha_0 = np.sum(alpha)
     beta_0 = np.sum(beta)
     kl = gammaln(alpha_0) - gammaln(beta_0) - \
-            np.sum(gammaln(alpha)) + np.sum(gammaln(beta)) + \
-            np.sum((alpha - beta) * (psi(alpha) - psi(alpha_0)))
+        np.sum(gammaln(alpha)) + np.sum(gammaln(beta)) + \
+        np.sum((alpha - beta) * (psi(alpha) - psi(alpha_0)))
     return kl
 
 

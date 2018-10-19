@@ -4,9 +4,8 @@ import cProfile
 import logging
 import pickle
 import pstats
+import sys
 from timeit import default_timer
-
-import numpy as np
 
 from data_model import Review
 from reviews_soli import SimulationStats, SoliConfig
@@ -33,6 +32,18 @@ DATASET_SIMULATORS = {
 
 
 class Scenario(object):
+    """Specify experiment scenario details.
+
+    Attributes:
+        + name: name of the experiment scenario.
+        + soli_configs: list of SoliConfig, which includes how to pick the next
+        feature to solicitate, how to generate answer and the optimization
+        goal.
+        + metrics: list of UncertaintyMetric telling how to measure.
+        + product_to_reviews: normally None, useful for 'synthetic' scenario to
+        generate synthetic dataset on-fly.
+    """
+    _scenarios = {}
 
     def __init__(self, name, soli_configs, metrics,
                  product_to_reviews=None):
@@ -42,45 +53,70 @@ class Scenario(object):
         self.product_to_reviews = product_to_reviews
 
     @classmethod
-    def build(cls, name):
-        metrics = [
-                   UncertaintyMetric('expected_rating_var'),
-                   UncertaintyMetric('confidence_interval_len'),
-                   UncertaintyMetric('high_confidence_ratio',
-                                     aggregate=np.average, ratio=True),
-                   ]
-        if name == "basic":
-            soli_configs = SoliConfig.build(
-                pick_mths=['pick_highest'],
-                answer_mths=['answer_by_gen'],
-                optm_goals=[
-                            UncertaintyMetric('expected_rating_var'),
-                            # UncertaintyMetric('expected_uncertainty_drop'),
-                            ]
-                )
-            return cls(name, soli_configs, metrics)
-        elif name == "passive_vs_active":
-            soli_configs = SoliConfig.build(
-                pick_mths=["pick_highest", "pick_by_user"],
-                answer_mths=['answer_almost_real'],
-                optm_goals=[
-                            UncertaintyMetric('expected_rating_var'),
-                            ]
-                )
-            return cls(name, soli_configs, metrics)
-        elif name == "synthetic":
-            scenario = cls.build("basic")
-            scenario.name = name
+    def basic(cls):
+        metrics = UncertaintyMetric.metrics_standard()
+        soli_configs = SoliConfig.build(
+            pick_mths=['pick_highest'],
+            answer_mths=['answer_by_gen'],
+            optm_goals=[
+                        UncertaintyMetric('expected_rating_var'),
+                        ]
+            )
+        # sys._getframe().f_code.co_name: current function name, i.e. 'basic'
+        return cls(sys._getframe().f_code.co_name, soli_configs, metrics)
 
-            FEATURE_COUNT = 3
-            STAR_RANK = 6
-            scenario.product_to_reviews = SyntheticReview.import_dataset(None,
-                    star_rank=STAR_RANK, feature_count=FEATURE_COUNT,
-                    randomize=False)
-            scenario.star_rank = STAR_RANK
-            return scenario
-        else:
-            return None
+    @classmethod
+    def passive_vs_active(cls):
+        metrics = UncertaintyMetric.metrics_standard()
+        soli_configs = SoliConfig.build(
+            pick_mths=["pick_highest", "pick_by_user"],
+            answer_mths=['answer_almost_real'],
+            optm_goals=[
+                        UncertaintyMetric('expected_rating_var'),
+                        ]
+            )
+        return cls(sys._getframe().f_code.co_name, soli_configs, metrics)
+
+    @classmethod
+    def synthetic(cls):
+        """This scenario use created synthetic dataset."""
+        metrics = UncertaintyMetric.metrics_standard()
+        soli_configs = SoliConfig.build(
+            pick_mths=['pick_highest'],
+            answer_mths=['answer_by_gen'],
+            optm_goals=[
+                        UncertaintyMetric('expected_rating_var'),
+                        ]
+            )
+        return cls(
+                sys._getframe().f_code.co_name, soli_configs, metrics,
+                product_to_reviews=SyntheticReview.import_dataset(
+                    None, star_rank=6, feature_count=3, randomize=False)
+                )
+
+    @classmethod
+    def correlation(cls):
+        uncertainty_correlated = UncertaintyMetric(
+                'expected_rating_var', correlated=True)
+        metrics = [
+                uncertainty_correlated,
+                ]
+        soli_configs = SoliConfig.build(
+            pick_mths=['pick_highest'],
+            answer_mths=['answer_by_gen'],
+            optm_goals=[
+                        uncertainty_correlated,
+                        ]
+            )
+        return cls(sys._getframe().f_code.co_name, soli_configs, metrics)
+
+
+SCENARIOS = {
+        Scenario.basic.__name__: Scenario.basic(),
+        Scenario.passive_vs_active.__name__: Scenario.passive_vs_active(),
+        Scenario.synthetic.__name__: Scenario.synthetic(),
+        Scenario.correlation.__name__: Scenario.correlation(),
+        }
 
 
 def simulate_reviews_soli(product_to_reviews,
@@ -228,7 +264,7 @@ def start_sim(args):
     """
     star_rank, review_cls, _ = DATASET_SIMULATORS[args.dataset]
 
-    scenario = Scenario.build(args.scenario)
+    scenario = SCENARIOS[args.scenario]
     if scenario.product_to_reviews:
         product_to_reviews = scenario.product_to_reviews
         star_rank = scenario.star_rank
@@ -263,8 +299,9 @@ if __name__ == '__main__':
             "--dataset", default="edmunds",
             help="Dataset name (default='edmunds')")
     parser.add_argument(
-            "--scenario", default="basic",
-            help="Experiment scenario (default='basic')")
+            "--scenario", default=Scenario.basic.__name__,
+            choices=SCENARIOS.keys(),
+            help=f"Experiment scenario (default='{Scenario.basic.__name__}')")
     parser.add_argument(
             "--poll-count", type=int, default=-1,
             help="Number of polls (customers) to ask (default=-1, i.e. number"
@@ -296,7 +333,7 @@ if __name__ == '__main__':
     if args.duplicate and args.question_count < 2:
         args.question_count = 2
 
-    logger.setLevel(getattr(logging, args.loglevel.upper()))
+    logging.setLevel(getattr(logging, args.loglevel.upper()))
     logger.info("args: {}".format(args))
 
     if args.profile:
