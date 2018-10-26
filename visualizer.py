@@ -108,8 +108,8 @@ def plot_experiment_result(experiment,
     if dataset == "synthetic":
         product_to_aspect_stars = SyntheticReview.import_synthetic_profile()
 
-    filename = plot_dir + experiment
-    experiment_path = experiment_dir + experiment + ".pickle"
+    filename = path.join(plot_dir, experiment)
+    experiment_path = path.join(experiment_dir, experiment + ".pickle")
     with open(experiment_path, 'rb') as f:
         product_to_stats = pickle.load(f)
 
@@ -120,6 +120,7 @@ def plot_experiment_result(experiment,
     soliconfig_to_stats_average = soli_start.summary_product_to_config_stats(
         product_to_stats, plotted_poll_end=poll, ignore_rating=True)
     fig = plot_sim_stats(soliconfig_to_stats_average,
+                         plot_dir=plot_dir,
                          poll=poll,
                          marker_step=marker_step,
                          plot_rating=False,
@@ -134,6 +135,7 @@ def plot_experiment_result(experiment,
         for product, goal_to_stats in product_to_stats.items():
             fig = plot_sim_stats(
                 goal_to_stats,
+                plot_dir=plot_dir,
                 poll=poll,
                 marker_step=marker_step,
                 product=product,
@@ -142,14 +144,14 @@ def plot_experiment_result(experiment,
             fig.suptitle(product, fontsize=15, fontweight='bold')
             savefig(fig, filename + "_" + str(product))
 
-    logger.info('Exported plots to "{}{}*.pdf"'.format(plot_dir, experiment))
+    logger.info(f'Exported plots to "{filename}*.pdf"')
 
 
 def plot_sim_stats(soliconfig_to_stats,
                    poll=100, marker_step=20, fig_w=16, subplt_fig_h=5,
                    plot_rating=True, product=None, aspect_to_star_counts=None,
                    scale=1, conference="acm", ratio=GOLDEN_RATIO,
-                   plot_pdf_prefix=None):
+                   plot_pdf_prefix=None, plot_dir='plots'):
     """Plot a product's rating distribution and simulation result statistics.
     Args:
         soliconfig_to_stats_average: dict,
@@ -244,6 +246,7 @@ def plot_sim_stats(soliconfig_to_stats,
                 len(uncertainty_axarr),
                 soliconfig_to_stats,
                 figure_size,
+                plot_dir=plot_dir,
                 poll=poll,
                 marker_step=marker_step,
                 answer=answer)
@@ -341,7 +344,6 @@ def plot_cost_of_multi_picks(axarr,
                 ax.legend(loc='lower right')
             else:
                 ax.legend(loc='upper right')
-
 
             # Plot standard deviation
             ax_std = axarr[metric_idx * 2 + 1]
@@ -443,7 +445,8 @@ def plot_picked_features(axarr, soliconfig_to_stats,
                                 str(correlation),
                         marker=MARKERS[i],
                         ms=MARKER_SIZE,
-                        markeredgewidth=MARKER_WIDTH)
+                        markeredgewidth=MARKER_WIDTH
+                        )
                 count_max = max(count_max, np.max(Y))
                 count_min = min(count_min, np.min(Y))
 
@@ -588,6 +591,8 @@ if __name__ == '__main__':
     add_arg("--experiment-dir", default="output/",
             help="""Directory of experimental results, i.e. the pickle file
                     (default: output/)""")
+    add_arg("--output-dir", default="plots/",
+            help="Output dir of exported plots. Default: plots/")
     add_arg("--poll", type=int, default=299,
             help="last poll")
     add_arg("--marker-step", type=int, default=20,
@@ -611,6 +616,7 @@ if __name__ == '__main__':
         args.experiment,
         experiment_dir=args.experiment_dir,
         dataset=args.dataset,
+        plot_dir=args.output_dir,
         poll=args.poll,
         marker_step=args.marker_step,
         conference=args.conference,

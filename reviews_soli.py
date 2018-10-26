@@ -137,13 +137,17 @@ class ReviewsSolicitation(ABC):
                              "number of questions to ask per poll ({})".format(
                                  len(self.features), self.question_count))
 
+        co_ratings_prior = kwargs['co_ratings_prior'] \
+                if 'co_ratings_prior' in kwargs else None
         # Keep track feature's uncertainty
         self.uncertainty_book = UncertaintyBook(
                 self.star_rank,
                 len(self.features),
                 optm_goal=soli_config.optm_goal,
                 rating_truth_dists=self.star_dists,
-                dataset_profile=dataset_profile)
+                dataset_profile=dataset_profile,
+                co_ratings_prior=co_ratings_prior,
+                )
         self.poll_to_report = OrderedDict()
 
         self.credible_bar = self.star_rank / 2
@@ -208,10 +212,14 @@ class ReviewsSolicitation(ABC):
             self.poll_to_report[i] = \
                 self.uncertainty_book.report_uncertainty(self.metrics)
 
-        return SimulationStats(self.poll_count, self.question_count,
-                               self.poll_to_report,
-                               self.features,
-                               criterion_to_prior=self.uncertainty_book.prior)
+        return SimulationStats(
+                self.poll_count,
+                self.question_count,
+                self.poll_to_report,
+                self.features,
+                criterion_to_prior=self.uncertainty_book.prior,
+                co_ratings=self.uncertainty_book.co_ratings,
+                )
 
     @staticmethod
     def rating_generator(stars, star_dist):
@@ -394,9 +402,11 @@ class SimulationStats(object):
             poll starts from 0
         features (list): list of data_model.Feature
         criterion_to_prior: dict, from UncertaintyBook.prior
+        co_ratings: 2d numpy array, from UncertaintyBook.co_ratings
     """
     def __init__(self, poll_count, question_count, poll_to_report, features,
-                 criterion_to_prior=None):
+                 criterion_to_prior=None,
+                 co_ratings=None):
         self.poll_count = poll_count
         self.question_count = question_count
         self.poll_to_report = poll_to_report
@@ -408,6 +418,7 @@ class SimulationStats(object):
             self.no_answer_count = sum([feature.no_answer_count
                                         for feature in self.features])
         self.criterion_to_prior = criterion_to_prior
+        self.co_ratings = co_ratings
 
     def stats_str(self, message='', detail=False):
         stat_str = message + '\n'

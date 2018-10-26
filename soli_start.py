@@ -7,6 +7,8 @@ import pstats
 import sys
 from timeit import default_timer
 
+import numpy as np
+
 from data_model import Review
 from reviews_soli import SimulationStats, SoliConfig
 from edmunds import EdmundsReview, EdmundsReviewSolicitation
@@ -17,7 +19,7 @@ from uncertainty import UncertaintyMetric
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARN)
+# logger.setLevel(logging.WARN)
 ch = logging.StreamHandler()
 ch.setFormatter(logging.Formatter('%(asctime)s-%(levelname)s - %(message)s'))
 logger.addHandler(ch)
@@ -97,14 +99,23 @@ class Scenario(object):
     @classmethod
     def correlation(cls):
         uncertainty_correlated = UncertaintyMetric(
-                'expected_rating_var', correlated=True)
+                'expected_rating_var', correlated=True, corr_threshold=0.5)
+
+        # confidence region measure doesn't apply for co-rating prior
         metrics = [
                 uncertainty_correlated,
+                UncertaintyMetric('expected_rating_var', correlated=True,
+                                  aggregate=np.average, corr_threshold=0.5),
+                UncertaintyMetric('confidence_interval_len', correlated=True,
+                                  aggregate=np.max, corr_threshold=0.5),
+                UncertaintyMetric('confidence_interval_len', correlated=True,
+                                  aggregate=np.average, corr_threshold=0.5),
                 ]
         soli_configs = SoliConfig.build(
             pick_mths=['pick_highest'],
             answer_mths=['answer_by_gen'],
             optm_goals=[
+                        UncertaintyMetric('expected_rating_var'),
                         uncertainty_correlated,
                         ]
             )
@@ -123,6 +134,7 @@ def simulate_reviews_soli(product_to_reviews,
                           scenario,
                           star_rank=5,
                           dataset='edmunds',
+                          product_count=None,
                           poll_count=100,
                           question_count=1,
                           run_count=5,
@@ -135,6 +147,8 @@ def simulate_reviews_soli(product_to_reviews,
         star_rank: int
             e.g. 5 means 1, 2, 3, 4 and 5 stars system
         dataset: string, default='edmunds'
+        product_count: int, default=None
+            Number of product to experiment
         poll_count: int, default=100
             Number of polls (customers) to ask
         question_count: int, default=1
@@ -151,14 +165,27 @@ def simulate_reviews_soli(product_to_reviews,
             config_to_sim_stats: SoliConfig -> list of SimulationStats,
                 corresponding to SoliConfig.configs()
     """
-    product_to_reviews = {key: value
-                          for key, value in product_to_reviews.items()
-                          if len(value) >= review_count_lowbound}
-    logger.info('# products simulated: {}'.format(len(product_to_reviews)))
-
     _, review_cls, review_soli_sim_cls = DATASET_SIMULATORS[dataset]
     seed_features = review_cls.dup_scenario_features if kwargs['duplicate'] \
         else review_cls.seed_features
+
+    co_ratings_prior = None
+    if scenario.name == Scenario.correlation.__name__:
+        product_to_reviews, co_ratings_prior = \
+                split_dataset_to_correlation_prior(
+                        product_to_reviews, star_rank, seed_features)
+
+    product_to_reviews = {key: value
+                          for key, value in product_to_reviews.items()
+                          if len(value) >= review_count_lowbound}
+    if product_count and product_count > 0:
+        product_to_reviews = {
+                product: product_to_reviews[product]
+                for i, product in enumerate(product_to_reviews.keys())
+                if i < product_count
+                }
+    logger.info('# products simulated: {}'.format(len(product_to_reviews)))
+
     product_to_config_stats = {}
     for product, reviews in product_to_reviews.items():
         logger.info("Running over '{}'".format(product))
@@ -171,6 +198,7 @@ def simulate_reviews_soli(product_to_reviews,
         for soli_config in scenario.soli_configs:
             sim_statses = []
             for i in range(run_count):
+                kwargs['co_ratings_prior'] = co_ratings_prior
                 reviews_soli_sim = review_soli_sim_cls(
                         reviews, soli_config, scenario.metrics,
                         poll_count=poll_count,
@@ -179,6 +207,7 @@ def simulate_reviews_soli(product_to_reviews,
                         dataset_profile=dataset_profile,
                         **kwargs)
                 sim_stats = reviews_soli_sim.simulate()
+                co_ratings_prior = sim_stats.co_ratings
                 sim_statses.append(sim_stats)
 
             sim_stats_average = \
@@ -189,6 +218,36 @@ def simulate_reviews_soli(product_to_reviews,
         product_to_config_stats[product] = config_to_sim_stats
 
     return product_to_config_stats
+
+
+def split_dataset_to_correlation_prior(
+        product_to_reviews, star_rank, seed_features, prior_ratio=0.5):
+    product_to_simulate_count = int(prior_ratio * len(product_to_reviews))
+    product_to_reviews_exp = {}
+    product_to_reviews_prior = {}
+    count = 0
+    for product, reviews in product_to_reviews.items():
+        count += 1
+        if count <= product_to_simulate_count:
+            product_to_reviews_prior[product] = reviews
+        else:
+            product_to_reviews_exp[product] = reviews
+    logger.info(f'Use {len(product_to_reviews_prior)} products for co-rating '
+                f'count table prior, prior_ratio={prior_ratio}')
+
+    # build prior co-rating count table
+    feature_count = len(seed_features)
+    co_ratings = np.zeros((feature_count, feature_count, star_rank, star_rank))
+    feature_to_id = {feature: i for i, feature in enumerate(seed_features)}
+    for product, reviews in product_to_reviews_prior.items():
+        for review in reviews:
+            for feature_1, stars_1 in review.feature_to_stars.items():
+                for feature_2, stars_2 in review.feature_to_stars.items():
+                    co_ratings[feature_to_id[feature_2],
+                               feature_to_id[feature_1],
+                               stars_2[0] - 1,
+                               stars_1[0] - 1] += 1
+    return product_to_reviews_exp, co_ratings
 
 
 def summary_product_to_config_stats(product_to_config_stats,
@@ -280,6 +339,7 @@ def start_sim(args):
             scenario,
             star_rank=star_rank,
             dataset=args.dataset,
+            product_count=args.product_count,
             poll_count=args.poll_count,
             question_count=args.question_count,
             run_count=args.run_count,
@@ -303,6 +363,9 @@ if __name__ == '__main__':
             choices=SCENARIOS.keys(),
             help=f"Experiment scenario (default='{Scenario.basic.__name__}')")
     parser.add_argument(
+            "--product-count", type=int, default=-1,
+            help="Number of product to experiment. Default=-1, or all avail")
+    parser.add_argument(
             "--poll-count", type=int, default=-1,
             help="Number of polls (customers) to ask (default=-1, i.e. number"
             " of reviews of the product)")
@@ -320,8 +383,8 @@ if __name__ == '__main__':
             "--output", default="output",
             help="output file path (default='output/result.pickle')")
     parser.add_argument(
-            "--loglevel", default='WARN',
-            help="log level (default='WARN')")
+            "--loglevel", default='INFO',
+            help="log level (default='INFO')")
     parser.add_argument(
             "--profile", action="store_true",
             help="Profile the program")
@@ -333,7 +396,7 @@ if __name__ == '__main__':
     if args.duplicate and args.question_count < 2:
         args.question_count = 2
 
-    logging.setLevel(getattr(logging, args.loglevel.upper()))
+    logging.getLogger().setLevel(getattr(logging, args.loglevel.upper()))
     logger.info("args: {}".format(args))
 
     if args.profile:

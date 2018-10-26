@@ -1,9 +1,14 @@
 #!/bin/bash
 
 DATASET=$1    # accept: "edmunds", "bliu", "semeval" and "synthetic"
+OUTPUT_DIR='output'
+PLOT_DIR='plots'
+DROPBOX="${HOME}/Dropbox/testbox/review_soli/"
 
-SCENARIO='basic'
+SCENARIO='correlation'
+#SCENARIO='basic'
 RUN=200
+PRODUCT_COUNT=-1
 POLL=300
 QUESTION=3
 ANSWER=''
@@ -35,16 +40,18 @@ else
   exit
 fi
 
-EXPERIMENT=${DATASET}_cl${COUNT_LOWBOUND}_poll${POLL}_q${QUESTION}_run${RUN}${ANSWER}
+EXPERIMENT="${SCENARIO}_${DATASET}_cl${COUNT_LOWBOUND}_poll${POLL}_q${QUESTION}_run${RUN}${ANSWER}"
 echo $EXPERIMENT
 STEP=$(( POLL / 25 ))
 LOG='INFO'
 #LOG='DEBUG'
 
-OUTPUT_DIR='output/'
-python soli_start.py --input=$INPUT \
+#python -m pdb soli_start.py \
+python soli_start.py \
+                     --input=$INPUT \
                      --dataset=$DATASET \
                      --scenario=$SCENARIO \
+                     --product-count=$PRODUCT_COUNT \
                      --review-count-lowbound=$COUNT_LOWBOUND \
                      --question-count=$QUESTION \
                      --poll-count=$POLL \
@@ -54,10 +61,10 @@ python soli_start.py --input=$INPUT \
 
 python visualizer.py --dataset $DATASET \
                      --experiment $EXPERIMENT \
+                     --experiment-dir $OUTPUT_DIR \
+                     --output-dir $PLOT_DIR \
                      --poll $(( POLL - 1)) \
                      --marker-step $STEP \
                      --scale 0.5
 
-PLOT_DIR='plots/'
-DROPBOX="${HOME}/Dropbox/testbox/review_soli/"
-cp ${PLOT_DIR}/${EXPERIMENT}*.pdf $DROPBOX
+#cp ${PLOT_DIR}/${EXPERIMENT}*.pdf $DROPBOX

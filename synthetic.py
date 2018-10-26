@@ -23,7 +23,7 @@ class SyntheticReview(Review):
             [3, 60], [0.2, 0.25], [2, 2.5],
             [0.1, 0.7], [0.1, 10], [50, 50],
             [0.01, 0.01], [1, 1.5], [6, 8], [3, 20], [15, 4],
-            [0.5, 1], [ 3, 2.5], [7, 0.2], [5, 25], [5.5, 9]
+            [0.5, 1], [3, 2.5], [7, 0.2], [5, 25], [5.5, 9]
         ])
     PROFILE_PATH = "output/synthetic_data.pickle"
 
@@ -36,7 +36,7 @@ class SyntheticReview(Review):
             cls.seed_features.append(feature)
 
             alpha, beta = cls.BETA_BINO_PARAMS[i, :] if not randomize \
-                                                     else random_alpha_beta()
+                else random_alpha_beta()
             logger.debug("alpha, beta: {}, {}".format(alpha, beta))
             star_dist = np.array(beta_binomial(alpha, beta, star_rank - 1))
             star_counts = np.ceil(star_dist * 5 * star_rank)
@@ -90,8 +90,10 @@ def random_alpha_beta():
     """
     top = 50
     alpha, beta = random.randint(1, top), random.randint(1, top)
-    if random.random() >= 0.5: alpha /= top
-    if random.random() >= 0.5: beta /= top
+    if random.random() >= 0.5:
+        alpha /= top
+    if random.random() >= 0.5:
+        beta /= top
     return (alpha, beta)
 
 
@@ -141,4 +143,4 @@ if __name__ == "__main__":
     alpha = 2
     beta = 2
     n = 10
-    print(beta_binom(alpha, beta, n))
+    print(beta_binomial(alpha, beta, n))

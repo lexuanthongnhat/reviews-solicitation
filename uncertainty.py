@@ -17,19 +17,21 @@ class UncertaintyMetric(object):
             weighted by global/prior uncertainty information
         correlated: bool, default=False,
             infer a feature's uncertainty by other highly correlated features
-        cor_norm_factor: float, default=1.0
-            normalization factor for correlation
+        corr_threshold: float, default=0.5
+            correlation threshold to consider 2 aspects as fully correlated
+            0.5 is the default due to 'Correlation Coefficient Rule of Thumb'
+            by Krehbiel, T. C. (2004)
         aggregate: aggregate function, default=np.max
             select from list of feature's uncertainty
     """
     __metrics = []
 
     def __init__(self, criterion, weighted=False, correlated=False,
-                 cor_norm_factor=1.0, aggregate=np.max, ratio=False):
+                 corr_threshold=0.5, aggregate=np.max, ratio=False):
         self.criterion = criterion
         self.weighted = weighted
         self.correlated = correlated
-        self.cor_norm_factor = cor_norm_factor
+        self.corr_threshold = corr_threshold
         self.aggregate = aggregate
         self.ratio = ratio      # hack: high_confidence_ratio
 
@@ -51,8 +53,8 @@ class UncertaintyMetric(object):
                 metric_str = self.aggregate.__name__ + '_' + metric_str
         metric_str += '_weighted' if self.weighted else ''
         metric_str += '_correlated' if self.correlated else ''
-        if self.correlated and self.cor_norm_factor != 1.0:
-            metric_str += '_factor_{}'.format(self.cor_norm_factor)
+        if self.correlated and self.corr_threshold != 1.0:
+            metric_str += '_corr_threshold_{}'.format(self.corr_threshold)
         return metric_str
 
     def __eq__(self, other):
@@ -60,7 +62,7 @@ class UncertaintyMetric(object):
             and self.criterion == other.criterion \
             and self.weighted == other.weighted \
             and self.correlated == other.correlated \
-            and self.cor_norm_factor == other.cor_norm_factor \
+            and self.corr_threshold == other.corr_threshold \
             and self.aggregate == other.aggregate
 
     def __neq__(self, other):
@@ -68,7 +70,7 @@ class UncertaintyMetric(object):
 
     def __hash__(self):
         return hash((self.criterion, self.weighted, self.correlated,
-                     self.cor_norm_factor, str(self.aggregate)))
+                     self.corr_threshold, str(self.aggregate)))
 
     @classmethod
     def metrics_standard(cls):
@@ -141,7 +143,9 @@ class UncertaintyBook(object):
     def __init__(self, star_rank, feature_count,
                  rating_truth_dists=None,
                  optm_goal=None,
-                 dataset_profile=None):
+                 dataset_profile=None,
+                 co_ratings_prior=None,
+                 ):
         if star_rank < 2 or feature_count < 1:
             raise ValueError('Invalid values of star_rank (>= 2) or '
                              'feature_count (>= 1)')
@@ -161,8 +165,9 @@ class UncertaintyBook(object):
         self.correlations_cache = None
 
         self.ratings = np.ones((feature_count, star_rank))
-        self.co_ratings = np.ones((feature_count, feature_count,
-                                   star_rank, star_rank))
+        self.co_ratings = np.copy(co_ratings_prior) \
+            if co_ratings_prior is not None \
+            else np.ones((feature_count, feature_count, star_rank, star_rank))
 
         self.prev_ratings = np.ones((feature_count, star_rank))
         self.vars = [[0, 1] for i in range(feature_count)]
@@ -261,9 +266,10 @@ class UncertaintyBook(object):
         else:
             if self.correlations_cache is None:
                 self.correlations_cache = get_feature_correlations(
-                        self.co_ratings, metric.cor_norm_factor)
-            cor_uncertainties = correlated_uncertainty(indept_uncertainties,
-                                                       self.correlations_cache)
+                        self.co_ratings)
+            cor_uncertainties = correlated_uncertainty(
+                    indept_uncertainties, self.correlations_cache,
+                    corr_threshold=metric.corr_threshold)
 
         return (indept_uncertainties, cor_uncertainties)
 
@@ -412,7 +418,8 @@ class UncertaintyReport(object):
                     cor_uncertainties = np.copy(indept_uncertainties)
                 else:
                     cor_uncertainties = correlated_uncertainty(
-                            indept_uncertainties, self.correlations)
+                            indept_uncertainties, self.correlations,
+                            corr_threshold=metric.corr_threshold)
 
                 self.metric_to_totae[metric] = cor_uncertainties.sum()
 
@@ -488,7 +495,7 @@ class UncertaintyReport(object):
         return report_average
 
 
-def get_feature_correlations(co_ratings, cor_norm_factor=1.0):
+def get_feature_correlations(co_ratings):
     """Compute feature's correlations matrix from co_ratings.
 
     Correlation is calculated by function 'pearson_cor_on_flatten'
@@ -504,30 +511,36 @@ def get_feature_correlations(co_ratings, cor_norm_factor=1.0):
     feature_count, star_rank = co_ratings.shape[1:3]
     correlations = np.apply_along_axis(
         pearson_cor_on_flatten, 2,
-        co_ratings.reshape(feature_count, feature_count,
-                           star_rank * star_rank))
-    # Avoid divided by zero later
-    if np.min(np.abs(correlations)) == 0.0:
-        correlations = np.abs(correlations) + 0.00001
-
-    if cor_norm_factor != 1.0:
-        correlations = correlations / cor_norm_factor
+        co_ratings.reshape(feature_count, feature_count, star_rank * star_rank)
+        )
 
     np.fill_diagonal(correlations, 1)
     return correlations
 
 
-def correlated_uncertainty(indept_uncertainties, correlations):
+def correlated_uncertainty(indept_uncertainties, correlations,
+                           corr_threshold=0.5):
     """Compute feature's correlated uncertainty.
 
     Formula: cor_uncertainty(feature_Xi)
-             = min {independent_uncertainty(feature_Xj) / correlation(Xi, Yj)}
+             = min {independent_uncertainty(feature_Xj) / corr_factor(Xi, Yj)}
+    Currently correlations_factor func uses a threshold to trigger correlating.
+    That is when corr(Xi, Xj) > threshold, corr_factor(Xi, Xj) = 1, so maybe
+    switch to other aspect uncertainty value.
     """
     feature_count = indept_uncertainties.shape[0]
-    correlated_var = indept_uncertainties.reshape(feature_count, 1) / np.abs(
-            correlations)
-    cor_uncertainties = np.min(correlated_var, axis=1)
+    correlated_var = indept_uncertainties.reshape(feature_count, 1) / \
+        correlations_factor(correlations, corr_threshold)
+    cor_uncertainties = np.min(correlated_var, axis=0)
     return cor_uncertainties
+
+
+def correlations_factor(correlations, corr_threshold):
+    """Currently employ Heaviside/Unit step function style."""
+    corrs = np.abs(correlations)
+    corrs[corrs >= corr_threshold] = 1.0
+    corrs[corrs < corr_threshold] = 0.01        # not 0 to avoid divide by zero
+    return corrs
 
 
 def weighted_uncertainty(uncertainty, rating_count,
@@ -750,6 +763,28 @@ def pearson_cor(count_table):
     cov = (row_col_var * star_weights).sum().sum()
 
     return cov / np.sqrt(rvar * cvar)
+
+
+def convert_count_table_to_pairs(count_table):
+    d = count_table.shape[0]    # number of star levels
+    rows = []
+    cols = []
+    for i in range(d):
+        for j in range(d):
+            for _ in range(int(count_table[i, j])):
+                rows.append(i + 1)
+                cols.append(j + 1)
+    return rows, cols
+
+
+def pearson_traditional(count_table):
+    rows, cols = convert_count_table_to_pairs(count_table)
+    return stats.pearsonr(rows, cols)
+
+
+def spearman_rank_cor(count_table):
+    rows, cols = convert_count_table_to_pairs(count_table)
+    return stats.spearmanr(rows, cols)
 
 
 def confidence_interval_len(rating_counts, confidence_level=0.95):
