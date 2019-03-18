@@ -18,6 +18,7 @@ jupyter_contrib_nbextensions = ">=0.2.4"
 [dev-packages]
 "flake8" = "*"
 "autopep8" = "==1.4"
+yapf = "*"
 
 [requires]
 python_version = "3.6"

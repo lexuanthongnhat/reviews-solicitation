@@ -45,6 +45,32 @@ class Review(ABC):
         """
 
     @classmethod
+    def get_aspect_answer_probs(cls, product_to_reviews):
+        """
+        Args:
+            product_to_reviews (dict): product -> list of Reviews
+        Returns:
+            aspect_to_answer_prob: dict - aspect -> probability of being rated
+                in a review
+        """
+        # Note that the set of aspects may be different for each product in Amz
+        aspect_to_count = defaultdict(int)
+        aspect_to_review_count = defaultdict(int)
+        for reviews in product_to_reviews.values():
+            aspects = set([])
+            for review in reviews:
+                for aspect, stars in review.feature_to_stars.items():
+                    if stars:
+                        aspect_to_count[aspect] += 1
+                    aspects.add(aspect)
+            for aspect in aspects:
+                aspect_to_review_count[aspect] += len(reviews)
+
+        aspect_to_answer_prob = {aspect: count / aspect_to_review_count[aspect]
+                                 for aspect, count in aspect_to_count.items()}
+        return aspect_to_answer_prob
+
+    @classmethod
     def sample_star_dist(cls, reviews, features):
         """Sampling a set of reviews for the distribution of stars.
         Args:
