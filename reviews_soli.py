@@ -138,7 +138,7 @@ class ReviewsSolicitation(ABC):
                                  len(self.features), self.question_count))
 
         co_ratings_prior = kwargs['co_ratings_prior'] \
-                if 'co_ratings_prior' in kwargs else None
+            if 'co_ratings_prior' in kwargs else None
         # Keep track feature's uncertainty
         self.uncertainty_book = UncertaintyBook(
                 self.star_rank,
@@ -217,7 +217,6 @@ class ReviewsSolicitation(ABC):
                 self.question_count,
                 self.poll_to_report,
                 self.features,
-                criterion_to_prior=self.uncertainty_book.prior,
                 co_ratings=self.uncertainty_book.co_ratings,
                 )
 
@@ -405,7 +404,6 @@ class SimulationStats(object):
         co_ratings: 2d numpy array, from UncertaintyBook.co_ratings
     """
     def __init__(self, poll_count, question_count, poll_to_report, features,
-                 criterion_to_prior=None,
                  co_ratings=None):
         self.poll_count = poll_count
         self.question_count = question_count
@@ -417,7 +415,6 @@ class SimulationStats(object):
         if features:
             self.no_answer_count = sum([feature.no_answer_count
                                         for feature in self.features])
-        self.criterion_to_prior = criterion_to_prior
         self.co_ratings = co_ratings
 
     def stats_str(self, message='', detail=False):
@@ -447,19 +444,10 @@ class SimulationStats(object):
         Args:
             sim_states: list of SimulationStats
             plotted_poll_end: int, default=100
-                last poll to be plotted. Must re-weight weighted metric's
-                uncertainty accroding to this poll.
+                last poll to be plotted.
             ignore_rating: bool, default=False,
                 ignore averaging rating of all products.
         """
-        criterion_to_prior = sim_statses[0].criterion_to_prior
-        for sim_stats in sim_statses:
-            poll_end_ratings_count = np.sum(
-                    sim_stats.poll_to_report[plotted_poll_end].ratings, axis=1)
-            for report in sim_stats.poll_to_report.values():
-                report.re_weight_uncertainty(criterion_to_prior,
-                                             poll_end_ratings_count)
-
         poll_to_reports = defaultdict(list)
         for poll in range(plotted_poll_end):
             for sim_stats in sim_statses:
@@ -499,4 +487,4 @@ class SimulationStats(object):
             first_stats.question_count,
             poll_to_report_average,
             first_stats.features,
-            criterion_to_prior=first_stats.criterion_to_prior)
+            )

@@ -2,8 +2,6 @@ import csv
 from collections import defaultdict
 from dateutil.parser import parse
 
-import numpy as np
-
 from data_model import Review
 from reviews_soli import ReviewsSolicitation
 

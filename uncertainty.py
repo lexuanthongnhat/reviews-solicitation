@@ -15,8 +15,6 @@ class UncertaintyMetric(object):
     Attributes:
         criterion: str,
             individual/independent uncertainty of a single feature
-        weighted: bool, default=False,
-            weighted by global/prior uncertainty information
         correlated: bool, default=False,
             infer a feature's uncertainty by other highly correlated features
         corr_threshold: float, default=0.5
@@ -28,10 +26,14 @@ class UncertaintyMetric(object):
     """
     __metrics = []
 
-    def __init__(self, criterion, weighted=False, correlated=False,
-                 corr_threshold=0.5, aggregate=np.max, ratio=False):
+    def __init__(self,
+                 criterion,
+                 correlated=False,
+                 corr_threshold=0.5,
+                 aggregate=np.max,
+                 ratio=False,
+                 ):
         self.criterion = criterion
-        self.weighted = weighted
         self.correlated = correlated
         self.corr_threshold = corr_threshold
         self.aggregate = aggregate
@@ -53,7 +55,6 @@ class UncertaintyMetric(object):
                 metric_str = 'max_' + metric_str
             else:
                 metric_str = self.aggregate.__name__ + '_' + metric_str
-        metric_str += '_weighted' if self.weighted else ''
         metric_str += '_correlated' if self.correlated else ''
         if self.correlated and self.corr_threshold != 1.0:
             metric_str += '_corr_threshold_{}'.format(self.corr_threshold)
@@ -62,7 +63,6 @@ class UncertaintyMetric(object):
     def __eq__(self, other):
         return isinstance(other, self.__class__) \
             and self.criterion == other.criterion \
-            and self.weighted == other.weighted \
             and self.correlated == other.correlated \
             and self.corr_threshold == other.corr_threshold \
             and self.aggregate == other.aggregate
@@ -71,7 +71,7 @@ class UncertaintyMetric(object):
         return not self.__eq__(other)
 
     def __hash__(self):
-        return hash((self.criterion, self.weighted, self.correlated,
+        return hash((self.criterion, self.correlated,
                      self.corr_threshold, str(self.aggregate)))
 
     @classmethod
@@ -87,16 +87,9 @@ class UncertaintyMetric(object):
     @classmethod
     def metrics(cls):
         if not cls.__metrics:
-            cls.__metrics.append(cls('dirichlet_var_sum', weighted=False,
-                                     correlated=False))
-            cls.__metrics.append(cls('expected_rating_var', weighted=False,
-                                     correlated=False))
-            cls.__metrics.append(cls('expected_rating_var', weighted=False,
-                                     correlated=True))
-            cls.__metrics.append(cls('expected_rating_var', weighted=True,
-                                     correlated=False))
-            cls.__metrics.append(cls('expected_rating_var', weighted=True,
-                                     correlated=True))
+            cls.__metrics.append(cls('dirichlet_var_sum', correlated=False))
+            cls.__metrics.append(cls('expected_rating_var', correlated=False))
+            cls.__metrics.append(cls('expected_rating_var', correlated=True))
 
             cls.__metrics.append(cls('confidence_interval_len',
                                      aggregate=np.average))
@@ -110,9 +103,7 @@ class UncertaintyMetric(object):
 
     @classmethod
     def optm_goals(cls):
-            return cls.metrics()[:5]
-
-    weighted_criteria = ['expected_rating_var']
+        return cls.metrics()[:3]
 
 
 class UncertaintyBook(object):
@@ -137,9 +128,7 @@ class UncertaintyBook(object):
         independent_uncertainties: 1d np array, shape: (feature_count, )
             individual feature's uncertainty values
         uncertainties: 1d np array, shape: (feature_count, )
-            feature's uncertainties after weighted, correlated
-        prior: dict, criterion -> {"count": xx, "uncertainty": yy}
-            store prior for weighted metric
+            feature's uncertainties after correlated
     """
 
     def __init__(self, star_rank, feature_count,
@@ -158,9 +147,6 @@ class UncertaintyBook(object):
         self.rating_truth_dists = rating_truth_dists
         self.dataset_profile = dataset_profile
 
-        if dataset_profile:         # only for weighted metrics
-            self._init_prior(dataset_profile)
-
         self.independent_uncertainties = np.zeros(feature_count)
         self.uncertainties = np.zeros(feature_count)
         self.criterion_to_cache_unc = {}
@@ -174,23 +160,10 @@ class UncertaintyBook(object):
         self.prev_ratings = np.ones((feature_count, star_rank))
         self.vars = [[0, 1] for i in range(feature_count)]
 
-    def _init_prior(self, dataset_profile):
-        self.prior = {}
-        for criterion in UncertaintyMetric.weighted_criteria:
-            prior_rating_count = dataset_profile.feature_rating_count_average
-            ratings_uncertainties = np.apply_along_axis(
-                globals()[criterion], 1,
-                np.array(dataset_profile.feature_ratings))
-            prior_uncertainty = np.average(ratings_uncertainties)
-            prior_uncertainty_total = prior_rating_count * prior_uncertainty
-            self.prior[criterion] = {
-                    'count': prior_rating_count,
-                    'uncertainty_total': prior_uncertainty_total}
-
     def refresh_uncertainty(self):
         """Refresh (independent) uncertainties to reflect latest ratings.
 
-        Calculate based on self.criterion, self.weighted, self.correlated
+        Calculate based on self.criterion, self.correlated
         """
         self.criterion_to_cache_unc = {}
         self.correlations_cache = None
@@ -255,14 +228,6 @@ class UncertaintyBook(object):
                 globals()[criterion], 1, self.ratings)
         indept_uncertainties = np.copy(self.criterion_to_cache_unc[criterion])
 
-        if metric.weighted:
-            rating_counts = np.sum(self.ratings, axis=1)
-            indept_uncertainties = weighted_uncertainty(
-                    indept_uncertainties,
-                    rating_counts,
-                    self.prior[criterion]['uncertainty_total'],
-                    self.prior[criterion]['count'])
-
         if not metric.correlated:
             cor_uncertainties = np.copy(indept_uncertainties)
         else:
@@ -278,8 +243,6 @@ class UncertaintyBook(object):
     def report_uncertainty(self, metrics):
         """Report current uncertainty.
 
-        Don't report total uncertainties of weighted metrics since they need
-        to be re-weighted later for fair comparison.
         Args:
             metrics: list of UncertaintyMetric objects
         Returns:
@@ -287,10 +250,7 @@ class UncertaintyBook(object):
         """
         metric_to_total = OrderedDict()
         for metric in metrics:
-            if not metric.weighted:
-                metric_to_total[metric] = self.uncertainty_total(metric)
-            else:
-                metric_to_total[metric] = -1
+            metric_to_total[metric] = self.uncertainty_total(metric)
 
         base_criterion = UncertaintyMetric.metrics()[0].criterion
         if base_criterion in self.criterion_to_cache_unc:
@@ -368,7 +328,7 @@ class UncertaintyReport(object):
                 ratings of all features, from UncertaintyBook.ratings
             criterion_to_uncertainties: dict,
                 base criterion -> independent uncertainties,
-                base metric are the one without weighted, correlated but not
+                base metric are the one without correlated but not
                 confidence based. So far, base criterion is
                 'expected_rating_var'
             correlations: 2-d np array,
@@ -392,38 +352,6 @@ class UncertaintyReport(object):
 
     def get_uncertainty_total(self, metric):
         return self.metric_to_total[metric]
-
-    def re_weight_uncertainty(self, criterion_to_prior,
-                              poll_end_ratings_count):
-        """Re-weight weighted uncertainty to desired end poll.
-
-        To plot the uncertainty change of weighted metric over poll,
-        re-calculate each poll's uncertainty using feature rating counts at
-        poll_end.
-        Args:
-            criterion_to_prior: dict, criterion -> prior of weighted metrics
-                from UncertaintyBook.prior
-            poll_end_ratings_count: 1-d np array,
-                number of rating count at poll_end
-        """
-        for metric in self.metric_to_total.keys():
-            if metric.weighted:
-                indept_uncertainties = np.copy(
-                        self.criterion_to_uncertainties[metric.criterion])
-                prior = criterion_to_prior[metric.criterion]
-
-                indept_uncertainties = weighted_uncertainty(
-                        indept_uncertainties, poll_end_ratings_count,
-                        prior["uncertainty_total"], prior["count"])
-
-                if not metric.correlated:
-                    cor_uncertainties = np.copy(indept_uncertainties)
-                else:
-                    cor_uncertainties = correlated_uncertainty(
-                            indept_uncertainties, self.correlations,
-                            corr_threshold=metric.corr_threshold)
-
-                self.metric_to_totae[metric] = cor_uncertainties.sum()
 
     @classmethod
     def average_reports(cls, reports, ignore_rating=False):
@@ -545,18 +473,6 @@ def correlations_factor(correlations, corr_threshold):
     return corrs
 
 
-def weighted_uncertainty(uncertainty, rating_count,
-                         prior_uncertainty_total, prior_count):
-    """Weighted uncertainty using global/prior ratings.
-
-    uncertainty, rating_count can be np.array of same shape
-    prior_count/uncertainty should be scalar values
-    """
-    weighted_value = (rating_count * uncertainty + prior_uncertainty_total) / (
-            rating_count + prior_count)
-    return weighted_value
-
-
 def dirichlet_var_sum(ratings):
     """Sum of feature's Dirichlet variance.
         sum(Var(star = i))
@@ -630,7 +546,7 @@ def naive_var(ratings):
 
 def expected_rating_var(ratings):
     """Variance of feature's expected rating.
-            Var(r|x) = Var(E[\#stars])
+            Var(r|x) = Var(E[#stars])
     Variance of linear combination has quaratic form matrix solution
             Var(aX) = a'∑a
         in which a is column vector, a' means a's transpose, and ∑ is

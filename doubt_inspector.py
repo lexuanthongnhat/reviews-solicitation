@@ -78,8 +78,8 @@ class DoubtInspector:
         metric_count = len(self.doubt_metrics)
         multi_run_doubts = np.zeros((self.run_count, self.poll_count,
                                      metric_count))
-        multi_run_drops = np.zeros((self.run_count, self.poll_count,
-                                          metric_count))
+        multi_run_drops = np.zeros(
+                (self.run_count, self.poll_count, metric_count))
         multi_run_expected_drops = np.zeros((self.run_count, self.poll_count,
                                              metric_count))
 
@@ -91,7 +91,7 @@ class DoubtInspector:
 
             ratings = np.ones(self.star_rank)
             # prev_doubts = np.array([doubt_metric(ratings)
-                                   # for doubt_metric in self.doubt_metrics])
+            #                         for doubt_metric in self.doubt_metrics])
             prev_doubts = self._compute_doubt(ratings, aspect_profile)
             for poll in range(self.poll_count):
                 # Expected uncertainty drop before getting a new actual rating
@@ -129,9 +129,10 @@ class DoubtInspector:
         Returns:
             1d np array of length #doubt_metrics
         """
-        return np.array([metric(ratings) if metric != unc.kl_divergence \
-                                         else metric(aspect_profile, ratings)
-                         for metric in self.doubt_metrics])
+        return np.array([
+            metric(ratings) if metric != unc.kl_divergence
+            else metric(aspect_profile, ratings)
+            for metric in self.doubt_metrics])
 
     def _compute_expected_drop(self, ratings, aspect_profile):
         """Compute expected doubt drop using appropriate metric.
@@ -142,8 +143,8 @@ class DoubtInspector:
         expected_drops = [
                 unc.expected_uncertainty_drop(
                     ratings,
-                    base_criterion=metric if metric != unc.kl_divergence \
-                                          else unc.expected_rating_var
+                    base_criterion=metric if metric != unc.kl_divergence
+                    else unc.expected_rating_var
                     )
                 for metric in self.doubt_metrics
                 ]

@@ -441,8 +441,8 @@ def plot_picked_features(axarr, soliconfig_to_stats,
                      for config_to_count in feature_to_per_config_counts.values()]
                 correlation = goal_to_stats[config].correlation_at(probe_poll)
                 ax.plot(X, Y,
-                        label=_to_latex(config.pick_goal_str()) + ", cor:\n" +\
-                                str(correlation),
+                        label=_to_latex(config.pick_goal_str()) + ", cor:\n" +
+                            str(correlation),
                         marker=MARKERS[i],
                         ms=MARKER_SIZE,
                         markeredgewidth=MARKER_WIDTH
