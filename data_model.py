@@ -153,6 +153,7 @@ class Review(ABC):
                               feature_to_review_count_average,
                               feature_rating_count_average,
                               feature_ratings,
+                              cls.get_aspect_answer_probs(product_to_reviews),
                               product_to_feature_ratings)
 
 
@@ -166,6 +167,7 @@ class DatasetProfile(object):
                  feature_to_review_count_average,
                  feature_rating_count_average,
                  feature_ratings,
+                 aspect_to_answer_prob,
                  product_to_feature_ratings):
         self.star_rank = star_rank
         self.product_count = product_count
@@ -176,6 +178,7 @@ class DatasetProfile(object):
         self.feature_to_review_count_average = feature_to_review_count_average
         self.feature_rating_count_average = feature_rating_count_average
         self.feature_ratings = feature_ratings
+        self.aspect_to_answer_prob = aspect_to_answer_prob
         self.product_to_feature_ratings = product_to_feature_ratings
 
     def __str__(self):
@@ -186,13 +189,14 @@ class DatasetProfile(object):
         return profile
 
     def full_str(self):
-        profile = self.__str__()
-        profile += '# reviews -> # products: {}\n'.format(
-            self.review_count_to_product_count)
-        profile += 'feature -> review count: {}\n'.format(
-            self.feature_to_review_count)
-        profile += 'feature -> average of review_count/product: {}\n'.format(
-            self.feature_to_review_count_average)
+        profile = (
+            f'{self.__str__()}'
+            f'# reviews -> # products: {self.review_count_to_product_count}\n'
+            f'feature -> review count: {self.feature_to_review_count}\n'
+            f'feature -> average of review_count/product: '
+            f'{self.feature_to_review_count_average}\n'
+            f'aspect -> rated probability: {self.aspect_to_answer_prob}'
+        )
         return profile
 
 

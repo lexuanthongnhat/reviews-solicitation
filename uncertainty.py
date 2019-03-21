@@ -21,6 +21,10 @@ class UncertaintyMetric(object):
             correlation threshold to consider 2 aspects as fully correlated
             0.5 is the default due to 'Correlation Coefficient Rule of Thumb'
             by Krehbiel, T. C. (2004)
+        rated_prob: bool, default=False
+            consider probability that the asked aspect will be answered (rated)
+            The specific probability values  will be derived from history.
+            This is only used for optimization goal.
         aggregate: aggregate function, default=np.max
             select from list of feature's uncertainty
     """
@@ -30,12 +34,14 @@ class UncertaintyMetric(object):
                  criterion,
                  correlated=False,
                  corr_threshold=0.5,
+                 rated_prob=False,
                  aggregate=np.max,
                  ratio=False,
                  ):
         self.criterion = criterion
         self.correlated = correlated
         self.corr_threshold = corr_threshold
+        self.rated_prob = rated_prob
         self.aggregate = aggregate
         self.ratio = ratio      # hack: high_confidence_ratio
 
@@ -58,6 +64,7 @@ class UncertaintyMetric(object):
         metric_str += '_correlated' if self.correlated else ''
         if self.correlated and self.corr_threshold != 1.0:
             metric_str += '_corr_threshold_{}'.format(self.corr_threshold)
+        metric_str += '_with_rated_prob' if self.rated_prob else ''
         return metric_str
 
     def __eq__(self, other):
@@ -65,14 +72,15 @@ class UncertaintyMetric(object):
             and self.criterion == other.criterion \
             and self.correlated == other.correlated \
             and self.corr_threshold == other.corr_threshold \
+            and self.rated_prob == other.rated_prob \
             and self.aggregate == other.aggregate
 
     def __neq__(self, other):
         return not self.__eq__(other)
 
     def __hash__(self):
-        return hash((self.criterion, self.correlated,
-                     self.corr_threshold, str(self.aggregate)))
+        return hash((self.criterion, self.correlated, self.corr_threshold,
+                     self.rated_prob, str(self.aggregate)))
 
     @classmethod
     def metrics_standard(cls):
@@ -118,8 +126,8 @@ class UncertaintyBook(object):
         rating_truth_dists: list of star_dist (list) or 2d np.array
             truth distribution used for generating simulated rating
         optm_goal: UncertaintyMetric
-        dataset_profile: SimulationStats object, default=None
-            dataset's profile
+        aspect_to_rated_prob: dict, data_model.Feature -> float, default=None,
+            aspect probability of being rated
         ratings: 2d numpy array, shape: (feature_count, star_rank)
             each row records ratings of a feature
         co_ratings: 4d numpy array, bootstraped by one for every slot.
@@ -131,10 +139,12 @@ class UncertaintyBook(object):
             feature's uncertainties after correlated
     """
 
-    def __init__(self, star_rank, feature_count,
+    def __init__(self,
+                 star_rank,
+                 feature_count,
                  rating_truth_dists=None,
                  optm_goal=None,
-                 dataset_profile=None,
+                 aspect_to_rated_prob=None,
                  co_ratings_prior=None,
                  ):
         if star_rank < 2 or feature_count < 1:
@@ -145,12 +155,19 @@ class UncertaintyBook(object):
         self.feature_count = feature_count
         self.optm_goal = optm_goal
         self.rating_truth_dists = rating_truth_dists
-        self.dataset_profile = dataset_profile
 
         self.independent_uncertainties = np.zeros(feature_count)
         self.uncertainties = np.zeros(feature_count)
         self.criterion_to_cache_unc = {}
         self.correlations_cache = None
+
+        self.rated_probs = np.ones(feature_count)
+        if not aspect_to_rated_prob:
+            aspect_id_to_rated_prob = {
+                aspect.idx: prob
+                for aspect, prob in aspect_to_rated_prob.items()}
+            self.rated_probs = np.array(
+                [aspect_id_to_rated_prob[idx] for idx in range(feature_count)])
 
         self.ratings = np.ones((feature_count, star_rank))
         self.co_ratings = np.copy(co_ratings_prior) \
@@ -228,6 +245,8 @@ class UncertaintyBook(object):
                 globals()[criterion], 1, self.ratings)
         indept_uncertainties = np.copy(self.criterion_to_cache_unc[criterion])
 
+        if metric.rated_prob:
+            indept_uncertainties *= self.rated_probs
         if not metric.correlated:
             cor_uncertainties = np.copy(indept_uncertainties)
         else:

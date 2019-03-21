@@ -1,12 +1,15 @@
 #!/bin/bash
 
 DATASET=$1    # accept: "edmunds", "bliu", "semeval" and "synthetic"
-OUTPUT_DIR='output'
-PLOT_DIR='plots'
+OUTPUT_DIR="output/${DATASET}"
+PLOT_DIR="${OUTPUT_DIR}/plot/"
+if [[ ! -d "${PLOT_DIR}" ]]; then
+  mkdir -p "${PLOT_DIR}"
+fi
 DROPBOX="${HOME}/Dropbox/testbox/review_soli/"
 
-SCENARIO='correlation'
-#SCENARIO='basic'
+#Full list in soli_start.SCENARIOS
+SCENARIO='basic_rated_prob'
 RUN=200
 PRODUCT_COUNT=-1
 POLL=300

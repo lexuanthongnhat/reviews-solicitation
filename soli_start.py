@@ -80,6 +80,21 @@ class Scenario(object):
         return cls(sys._getframe().f_code.co_name, soli_configs, metrics)
 
     @classmethod
+    def basic_rated_prob(cls):
+        """A basic scenario with consideration of answering probability."""
+        metrics = UncertaintyMetric.metrics_standard()
+        soli_configs = SoliConfig.build(
+            pick_mths=['pick_highest'],
+            answer_mths=['answer_by_gen_with_prob'],
+            optm_goals=[
+                        UncertaintyMetric('expected_rating_var'),
+                        UncertaintyMetric('expected_rating_var',
+                                          rated_prob=True),
+                        ]
+            )
+        return cls(sys._getframe().f_code.co_name, soli_configs, metrics)
+
+    @classmethod
     def synthetic(cls):
         """This scenario use created synthetic dataset."""
         metrics = UncertaintyMetric.metrics_standard()
@@ -127,6 +142,7 @@ SCENARIOS = {
         Scenario.passive_vs_active.__name__: Scenario.passive_vs_active(),
         Scenario.synthetic.__name__: Scenario.synthetic(),
         Scenario.correlation.__name__: Scenario.correlation(),
+        Scenario.basic_rated_prob.__name__: Scenario.basic_rated_prob(),
         }
 
 
@@ -157,8 +173,7 @@ def simulate_reviews_soli(product_to_reviews,
             Number of simulation run per product
         review_count_lowbound: int, default=200
             Only consider products with more than this lower bound into
-        dataset_profile: SimulationStats object, default=None
-            dataset's profile
+        dataset_profile: data_model.DatasetProfile object, default=None
     Returns:
         product_to_config_stats: dict
             product -> config_to_sim_stats, in which
@@ -298,22 +313,6 @@ def summary_optim_goal_ratings(optim_goal_to_product_result_stats):
                 pass
 
     return poll_to_optim_goal_ratings
-
-
-def probe_dataset(file_path, star_rank=5, dataset='edmunds'):
-    """Profiling the dataset
-    Args:
-        file_path (string)
-        star_rank (int): e.g. 5 means 1, 2, 3, 4 and 5 stars system
-        edmunds: string, specify the dataset
-    Returns:
-        dataset_profile: data_model.DatasetProfile object
-    """
-    _, review_cls, _ = DATASET_SIMULATORS[dataset]
-    product_to_reviews = review_cls.import_dataset(file_path,
-                                                   star_rank=star_rank)
-    dataset_profile = Review.probe_dataset(product_to_reviews)
-    return dataset_profile
 
 
 def start_sim(args):

@@ -119,6 +119,11 @@ class ReviewsSolicitation(ABC):
         self.seed_features = seed_features
         self.features = [Feature(i, feature_name)
                          for i, feature_name in enumerate(self.seed_features)]
+        self.aspect_to_rated_prob = None if not dataset_profile \
+            else {
+                feature: dataset_profile.aspect_to_answer_prob[feature.name]
+                for feature in self.features
+                }
         self.feature_to_star_dist = Review.sample_star_dist(reviews,
                                                             self.features)
         self.star_dists = [self.feature_to_star_dist[feature.name]
@@ -145,7 +150,7 @@ class ReviewsSolicitation(ABC):
                 len(self.features),
                 optm_goal=soli_config.optm_goal,
                 rating_truth_dists=self.star_dists,
-                dataset_profile=dataset_profile,
+                aspect_to_rated_prob=self.aspect_to_rated_prob,
                 co_ratings_prior=co_ratings_prior,
                 )
         self.poll_to_report = OrderedDict()
@@ -235,6 +240,22 @@ class ReviewsSolicitation(ABC):
             answered_star: int
         """
         return next(self.feature_to_rating_generator[picked_feature.name])
+
+    def answer_by_gen_with_prob(self, picked_aspect):
+        """Answer using sampling star's distribution of this product's reviews.
+
+        Note: Answer with a probability
+        Args:
+            picked_aspect: datamodel.Feature, returned by pick_method
+        Returns:
+            answered_star: int
+        """
+        star = self.answer_by_gen(picked_aspect)
+        roll_dice = np.random.random_sample()
+        if roll_dice <= self.aspect_to_rated_prob[picked_aspect]:
+            return star
+        else:
+            return None
 
     @abstractmethod
     def answer_in_time_order(self, picked_feature):
