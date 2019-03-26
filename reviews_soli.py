@@ -17,15 +17,22 @@ class SoliConfig(object):
         pick: str, func name of picking method
         answer: str, func name of answering method
         optm_goal: uncertainty.UncertaintyMetric
+        mixed_interface: bool, default=False,
+            mix free-text review with active solicitation.
     """
-    def __init__(self, pick, answer, optm_goal=None, baseline=False):
+    def __init__(self, pick, answer, optm_goal=None, baseline=False,
+                 mixed_interface=False,
+                 ):
         self.pick = pick
         self.answer = answer
         self.optm_goal = optm_goal
         self.baseline = baseline
+        self.mixed_interface = mixed_interface
 
     @classmethod
-    def build(cls, pick_mths=None, answer_mths=None, optm_goals=None):
+    def build(cls, pick_mths=None, answer_mths=None, optm_goals=None,
+              mixed_interface=False,
+              ):
         """Build Solicitation Configuration.
 
         Baseline configs are always in the beginning of the return list.
@@ -36,6 +43,8 @@ class SoliConfig(object):
                 default: ['answer_by_gen', 'answer_in_time_order']
             optm_goals: list, [UncertaintyMetric('expected_rating_var')]
                 optimization goal
+            mixed_interface: bool, default=False,
+                mix free-text review with active solicitation.
         Returns:
             configs: list of SoliConfig
         """
@@ -47,13 +56,16 @@ class SoliConfig(object):
             optm_goals is None else optm_goals
         configs = []
 
-        pick_baselines = ['pick_random', 'pick_least_count']
+        pick_baselines = (['pick_free_text_only'] if mixed_interface else
+                          ['pick_random', 'pick_least_count'])
         for pick, answer in itertools.product(pick_baselines, answer_mths):
-            configs.append(cls(pick, answer, baseline=True))
+            configs.append(cls(
+                pick, answer, baseline=True, mixed_interface=mixed_interface))
 
         for pick, answer, goal in itertools.product(pick_mths, answer_mths,
                                                     optm_goals):
-            configs.append(cls(pick, answer, optm_goal=goal))
+            configs.append(cls(
+                pick, answer, optm_goal=goal, mixed_interface=mixed_interface))
 
         return configs
 
@@ -175,14 +187,31 @@ class ReviewsSolicitation(ABC):
             self.num_waiting_answers = local_question_count
             already_picked_idx = []
             rated_features = []
+
+            # In a mixed interface, get all features in free-text review first
+            if self.soli_config.mixed_interface:
+                if not self.reviews:
+                    self.reviews = self.original_reviews.copy()
+                rated_review = self.reviews.pop(0)
+                for feature in self.features:
+                    if feature.name in rated_review.feature_to_stars:
+                        already_picked_idx.append(feature.idx)
+                        rated_features.append((
+                            feature,
+                            rated_review.feature_to_stars[feature.name][0]))
+                feature_left = max(0, len(self.features) -
+                                   len(rated_review.feature_to_stars))
+                local_question_count = min(feature_left, self.question_count)
+
             for q in range(local_question_count):
                 self.uncertainty_book.refresh_uncertainty()
                 picked_feature = self.__getattribute__(self.soli_config.pick)(
                         already_picked_idx)
                 answered_star = self.__getattribute__(self.soli_config.answer)(
-                        picked_feature)
+                        picked_feature) if picked_feature else None
 
-                # When running out of feature in pick_by_user method
+                # When running out of feature in pick_by_user, or
+                # pick_free_text_only
                 if not picked_feature and not answered_star:
                     continue
 
@@ -198,22 +227,11 @@ class ReviewsSolicitation(ABC):
                 # Update ratings, rating's uncertainty
                 already_picked_idx.append(picked_feature.idx)
                 if answered_star:
-                    self.uncertainty_book.rate_feature(picked_feature,
-                                                       answered_star)
-                    self.uncertainty_book.rate_2features(
-                            picked_feature, answered_star,
-                            picked_feature, answered_star)
-
-                    # Update co-rating of 2 features
-                    if rated_features:
-                        for pre_rated_feature, pre_star in rated_features:
-                            self.uncertainty_book.rate_2features(
-                                    pre_rated_feature, pre_star,
-                                    picked_feature, answered_star)
                     rated_features.append((picked_feature, answered_star))
                 else:
                     picked_feature.no_answer_count += 1
 
+            self._update_feature_ratings(rated_features)
             self.poll_to_report[i] = \
                 self.uncertainty_book.report_uncertainty(self.metrics)
 
@@ -224,6 +242,18 @@ class ReviewsSolicitation(ABC):
                 self.features,
                 co_ratings=self.uncertainty_book.co_ratings,
                 )
+
+    def _update_feature_ratings(self, rated_features):
+        if not rated_features:
+            return
+        for picked_feature, answered_star in rated_features:
+            self.uncertainty_book.rate_feature(picked_feature, answered_star)
+
+        # Update co-rating of 2 features
+        for (feature_1, star_1), (feature_2, star_2) in \
+                itertools.combinations_with_replacement(rated_features, 2):
+            self.uncertainty_book.rate_2features(feature_1, star_1,
+                                                 feature_2, star_2)
 
     @staticmethod
     def rating_generator(stars, star_dist):
@@ -331,6 +361,10 @@ class ReviewsSolicitation(ABC):
             rating_counts[already_picked_idx] = float('inf')
         min_indices = np.where(rating_counts == rating_counts.min())[0]
         return self.features[np.random.choice(min_indices)]
+
+    def pick_free_text_only(self, already_picked_idx):
+        """A dummy method picking nothing for free-text reviewing interface."""
+        return
 
     def pick_like_bandit(self, already_picked_idx, exploit_rate=0.5):
         """Pick a feature like a multi-armed bandit.

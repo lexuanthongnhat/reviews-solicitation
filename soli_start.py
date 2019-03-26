@@ -95,6 +95,24 @@ class Scenario(object):
         return cls(sys._getframe().f_code.co_name, soli_configs, metrics)
 
     @classmethod
+    def mix_interface(cls):
+        """Compare a free-text vs. mixed reviewing interface.
+
+        This method compare a traditional free-text review interface against
+        an augmented interface with active solicitation.
+        """
+        metrics = UncertaintyMetric.metrics_standard()
+        soli_configs = SoliConfig.build(
+            pick_mths=['pick_highest'],
+            answer_mths=['answer_by_gen'],
+            optm_goals=[
+                        UncertaintyMetric('expected_rating_var'),
+                        ],
+            mixed_interface=True,
+            )
+        return cls(sys._getframe().f_code.co_name, soli_configs, metrics)
+
+    @classmethod
     def synthetic(cls):
         """This scenario use created synthetic dataset."""
         metrics = UncertaintyMetric.metrics_standard()
@@ -143,6 +161,7 @@ SCENARIOS = {
         Scenario.synthetic.__name__: Scenario.synthetic(),
         Scenario.correlation.__name__: Scenario.correlation(),
         Scenario.basic_rated_prob.__name__: Scenario.basic_rated_prob(),
+        Scenario.mix_interface.__name__: Scenario.mix_interface(),
         }
 
 
