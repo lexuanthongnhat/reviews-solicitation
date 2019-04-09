@@ -14,6 +14,7 @@ from reviews_soli import SimulationStats, SoliConfig
 from edmunds import EdmundsReview, EdmundsReviewSolicitation
 from bliu import BliuReview, BliuReviewSolicitation
 from semeval import SemevalReview, SemevalReviewSolicitation
+from amz_laptop import AmzLaptopReview, AmzLaptopReviewSolicitation
 from synthetic import SyntheticReview, SyntheticReviewSolicitation
 from uncertainty import UncertaintyMetric
 
@@ -29,7 +30,8 @@ DATASET_SIMULATORS = {
     "edmunds": (5, EdmundsReview, EdmundsReviewSolicitation),   # 5: star
     "bliu": (6, BliuReview, BliuReviewSolicitation),
     "semeval": (3, SemevalReview, SemevalReviewSolicitation),
-    "synthetic": (6, SyntheticReview, SyntheticReviewSolicitation)
+    "amz_laptop": (3, AmzLaptopReview, AmzLaptopReviewSolicitation),
+    "synthetic": (6, SyntheticReview, SyntheticReviewSolicitation),
 }
 
 
@@ -104,7 +106,10 @@ class Scenario(object):
         metrics = UncertaintyMetric.metrics_standard()
         soli_configs = SoliConfig.build(
             pick_mths=['pick_highest'],
-            answer_mths=['answer_by_gen'],
+            answer_mths=[
+                'answer_by_gen',
+                'answer_by_gen_with_prob',
+                ],
             optm_goals=[
                         UncertaintyMetric('expected_rating_var'),
                         ],
@@ -224,7 +229,8 @@ def simulate_reviews_soli(product_to_reviews,
     for product, reviews in product_to_reviews.items():
         logger.info("Running over '{}'".format(product))
         # different aspects set for each product
-        if dataset == 'bliu' or dataset == 'semeval':
+        if dataset == 'bliu' or dataset == 'semeval' or \
+                dataset == 'amz_laptop':
             seed_features = set([feature for review in reviews
                                  for feature in review.features])
 

@@ -9,7 +9,8 @@ fi
 DROPBOX="${HOME}/Dropbox/testbox/review_soli/"
 
 #Full list in soli_start.SCENARIOS
-SCENARIO='basic_rated_prob'
+#SCENARIO='basic'
+SCENARIO='mix_interface'
 RUN=200
 PRODUCT_COUNT=-1
 POLL=300
@@ -34,10 +35,12 @@ elif [[ $1 == 'bliu' || $1 == 'semeval' ]]; then
     INPUT='anno-datasets/SemEval2014-Task4/'
   fi
 elif [[ $1 == 'synthetic' ]]; then
-  DATASET=$1
   SCENARIO='synthetic'
   COUNT_LOWBOUND=10
   QUESTION=2
+elif [[ $1 == 'amz_laptop' ]]; then
+  INPUT='datasets/laptop_labeled.json'
+  COUNT_LOWBOUND=300
 else
   echo "Unsupported dataset: $1"
   exit
