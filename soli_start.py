@@ -1,6 +1,7 @@
 import argparse
 from collections import OrderedDict
 import cProfile
+import itertools
 import logging
 import pickle
 import pstats
@@ -104,17 +105,23 @@ class Scenario(object):
         an augmented interface with active solicitation.
         """
         metrics = UncertaintyMetric.metrics_standard()
-        soli_configs = SoliConfig.build(
-            pick_mths=['pick_highest'],
-            answer_mths=[
-                'answer_by_gen',
-                'answer_by_gen_with_prob',
-                ],
-            optm_goals=[
-                        UncertaintyMetric('expected_rating_var'),
-                        ],
-            mixed_interface=True,
-            )
+        soli_configs = []
+        MIX = True
+        soli_configs.append(SoliConfig(
+            'pick_free_text_only', 'answer_by_gen', baseline=True,
+            mixed_interface=MIX))
+
+        pick_mths = ['pick_highest']
+        answer_mths = ['answer_by_gen', 'answer_by_gen_with_prob']
+        optm_goals = [UncertaintyMetric('expected_rating_var')]
+        question_counts = [1, 3]
+
+        for pick, question_count, goal, answer in itertools.product(
+                pick_mths, question_counts, optm_goals, answer_mths):
+            soli_configs.append(SoliConfig(
+                pick, answer, optm_goal=goal, mixed_interface=MIX,
+                question_count=question_count)
+                )
         return cls(sys._getframe().f_code.co_name, soli_configs, metrics)
 
     @classmethod

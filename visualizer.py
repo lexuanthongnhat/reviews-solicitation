@@ -132,7 +132,7 @@ def plot_experiment_result(experiment,
     fig.suptitle('Average over all products', fontsize=15, fontweight='bold')
     savefig(fig, filename)
 
-    if export_individual_product and  product_to_aspect_stars is not None:
+    if export_individual_product and product_to_aspect_stars is not None:
         for product, goal_to_stats in product_to_stats.items():
             fig = plot_sim_ratings(
                 goal_to_stats,
@@ -195,9 +195,9 @@ def plot_sim_stats(soliconfig_to_stats,
         uncertainty_axarr = [plt.subplot(gs[row_id + offset, col_id])
                              for row_id in range(metric_count)
                              for col_id in range(col_count)]
-        plot_cost_of_multi_picks(uncertainty_axarr, soliconfig_to_stats,
-                                 poll=poll, marker_step=marker_step,
-                                 answer=answer)
+        plot_axes_for_cost_of_multi_picks(
+                uncertainty_axarr, soliconfig_to_stats, poll=poll,
+                marker_step=marker_step)
         if plot_pdf_prefix is not None:
             figure_size = figsize(scale, conference=conference, ratio=ratio)
             plot_cost_of_multi_picks_to_pdfs(
@@ -312,12 +312,12 @@ def export_cost_of_multi_picks_same_answer(soliconfig_to_stats,
                         float_format="%.3f", freeze_panes=(1, 1))
 
 
-def plot_cost_of_multi_picks(axarr,
-                             soliconfig_to_stats,
-                             answer="answer_by_gen",
-                             poll=100,
-                             marker_step=20,
-                             ):
+def plot_axes_for_cost_of_multi_picks(
+        axarr,
+        soliconfig_to_stats,
+        poll=100,
+        marker_step=20,
+        ):
     """Plot the uncertainty change of multiple pick method with same answer.
     Args:
         axarr: list of Axes
@@ -371,8 +371,8 @@ def plot_cost_of_multi_picks_to_pdfs(
             for i in range(subplot_count)]
     axarr = [fig.add_subplot(1, 1, 1) for fig in figs]
 
-    plot_cost_of_multi_picks(axarr, soliconfig_to_stats,
-                             poll=poll, marker_step=marker_step, answer=answer)
+    plot_axes_for_cost_of_multi_picks(axarr, soliconfig_to_stats,
+                                      poll=poll, marker_step=marker_step)
 
     for filename, fig in zip(filenames, figs):
         fig.patch.set_alpha(0.)

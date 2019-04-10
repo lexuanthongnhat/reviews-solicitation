@@ -22,12 +22,14 @@ class SoliConfig(object):
     """
     def __init__(self, pick, answer, optm_goal=None, baseline=False,
                  mixed_interface=False,
+                 question_count=None,
                  ):
         self.pick = pick
         self.answer = answer
         self.optm_goal = optm_goal
         self.baseline = baseline
         self.mixed_interface = mixed_interface
+        self.question_count = question_count
 
     @classmethod
     def build(cls, pick_mths=None, answer_mths=None, optm_goals=None,
@@ -56,8 +58,7 @@ class SoliConfig(object):
             optm_goals is None else optm_goals
         configs = []
 
-        pick_baselines = (['pick_free_text_only'] if mixed_interface else
-                          ['pick_random', 'pick_least_count'])
+        pick_baselines = ['pick_random', 'pick_least_count']
         for pick, answer in itertools.product(pick_baselines, answer_mths):
             configs.append(cls(
                 pick, answer, baseline=True, mixed_interface=mixed_interface))
@@ -73,6 +74,10 @@ class SoliConfig(object):
         config = self.pick
         if self.optm_goal and self.pick != "pick_by_user":
             config += '_' + self.optm_goal.show()
+        if self.question_count:
+            config += f'_{self.question_count}_aspect'
+        if self.mixed_interface and self.answer == 'answer_by_gen_with_prob':
+            config += f'_response_prob'
         return config
 
     def __repr__(self):
@@ -82,16 +87,20 @@ class SoliConfig(object):
         return isinstance(other, self.__class__) \
                 and self.pick == other.pick \
                 and self.answer == other.answer \
-                and self.optm_goal == other.optm_goal
+                and self.optm_goal == other.optm_goal \
+                and self.baseline == other.baseline \
+                and self.mixed_interface == other.mixed_interface \
+                and self.question_count == other.question_count
 
     def __neq__(self, other):
         return not self.__eq__(other)
 
     def __hash__(self):
-        return hash((self.pick, self.answer, str(self.optm_goal)))
+        return hash((self.pick, self.answer, str(self.optm_goal),
+                     self.baseline, self.mixed_interface, self.question_count))
 
     def is_gen_answer(self):
-        return self.answer.endswith('_gen')
+        return self.answer.find('_gen') > -1
 
 
 class ReviewsSolicitation(ABC):
@@ -126,7 +135,7 @@ class ReviewsSolicitation(ABC):
         self.soli_config = soli_config
         self.metrics = metrics
         self.poll_count = poll_count
-        self.question_count = question_count
+        self.question_count = soli_config.question_count or question_count
 
         self.seed_features = seed_features
         self.features = [Feature(i, feature_name)
