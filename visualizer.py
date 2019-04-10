@@ -87,7 +87,9 @@ def plot_experiment_result(experiment,
                            marker_step=20,
                            conference="acm",
                            scale=1,
-                           ratio=GOLDEN_RATIO):
+                           ratio=GOLDEN_RATIO,
+                           export_individual_product=False,
+                           ):
     """Plot complete result of an experiment.
     Args:
         experiment: str,
@@ -123,7 +125,6 @@ def plot_experiment_result(experiment,
                          plot_dir=plot_dir,
                          poll=poll,
                          marker_step=marker_step,
-                         plot_rating=False,
                          plot_pdf_prefix=experiment,
                          scale=scale,
                          conference=conference,
@@ -131,8 +132,17 @@ def plot_experiment_result(experiment,
     fig.suptitle('Average over all products', fontsize=15, fontweight='bold')
     savefig(fig, filename)
 
-    if product_to_aspect_stars is not None:
+    if export_individual_product and  product_to_aspect_stars is not None:
         for product, goal_to_stats in product_to_stats.items():
+            fig = plot_sim_ratings(
+                goal_to_stats,
+                poll=poll,
+                product=product,
+                aspect_to_star_counts=product_to_aspect_stars[product]
+                )
+            fig.suptitle(f'{product} ratings', fontsize=15, fontweight='bold')
+            savefig(fig, f'{filename}_{str(product)}_ratings')
+
             fig = plot_sim_stats(
                 goal_to_stats,
                 plot_dir=plot_dir,
@@ -142,14 +152,14 @@ def plot_experiment_result(experiment,
                 aspect_to_star_counts=product_to_aspect_stars[product]
                 )
             fig.suptitle(product, fontsize=15, fontweight='bold')
-            savefig(fig, filename + "_" + str(product))
+            savefig(fig, f'{filename}_{str(product)}')
 
     logger.info(f'Exported plots to "{filename}*.pdf"')
 
 
 def plot_sim_stats(soliconfig_to_stats,
                    poll=100, marker_step=20, fig_w=16, subplt_fig_h=5,
-                   plot_rating=True, product=None, aspect_to_star_counts=None,
+                   product=None, aspect_to_star_counts=None,
                    scale=1, conference="acm", ratio=GOLDEN_RATIO,
                    plot_pdf_prefix=None, plot_dir='plots'):
     """Plot a product's rating distribution and simulation result statistics.
@@ -174,68 +184,17 @@ def plot_sim_stats(soliconfig_to_stats,
     answer_count = len(answer_to_goal_stats)
     metric_count = len(stats_sample.poll_to_report[1].metrics())
 
-    # grid layout of 2 plot types
-    uncertainty_col_count = 2
-    uncertainty_row_count = metric_count * answer_count
-
-    probe_poll_count = 6    # Number of polls to plot ratings at.
-    # 4: first for dataset star counts, 3 for violet, sd and variance plots
-    rating_row_count = answer_count * probe_poll_count + 4
-    uncertainty_rating_subplt_ratio = 1.6
-
-    uncertainty_h_unit = uncertainty_row_count
-    rating_h_unit = rating_row_count / uncertainty_rating_subplt_ratio
-    h_unit_count = uncertainty_h_unit + rating_h_unit \
-        if plot_rating else uncertainty_h_unit
-    fig = plt.figure(figsize=(fig_w, h_unit_count * subplt_fig_h))
-    if plot_rating:
-        gs = gridspec.GridSpec(
-            2, 1, hspace=0.1,
-            height_ratios=[rating_h_unit, uncertainty_h_unit])
-    else:
-        gs = gridspec.GridSpec(1, 1)
-
-    # Plot dataset rating and ratings after simulation
-    if plot_rating:
-        aspect_to_raw_stars = get_raw_stars(aspect_to_star_counts)
-        aspect_to_raw_stars = OrderedDict(
-            sorted(aspect_to_raw_stars.items(), key=lambda kv: np.std(kv[1])))
-        aspects = list(aspect_to_raw_stars.keys())
-
-        rating_row_id = 0
-        gs1 = gridspec.GridSpecFromSubplotSpec(rating_row_count, 1,
-                                               hspace=0.4,
-                                               subplot_spec=gs[0])
-
-        ax = plt.subplot(gs1[rating_row_id, :])
-        aspect_to_star_counts = OrderedDict([
-            (aspect, aspect_to_star_counts[aspect]) for aspect in aspects])
-        plot_aspect_star_counts(ax, product, aspect_to_star_counts)
-        rating_row_id += 1
-
-        axarr = [plt.subplot(gs1[rating_row_id, :]),
-                 plt.subplot(gs1[rating_row_id + 1, :]),
-                 plt.subplot(gs1[rating_row_id + 2, :])]
-        plot_aspect_rating_dist(axarr, product, aspect_to_star_counts,
-                                aspect_to_raw_stars)
-        rating_row_id += 3
-
-        axarr = [plt.subplot(gs1[rating_row_id + i, :])
-                 for i in range(answer_count * probe_poll_count)]
-        plot_picked_features(axarr, soliconfig_to_stats,
-                             answer_count=answer_count, poll=poll,
-                             sorted_features=aspects)
+    col_count = 1
+    row_count = metric_count * answer_count
+    fig = plt.figure(figsize=(fig_w, row_count * subplt_fig_h))
+    gs = gridspec.GridSpec(row_count, col_count, hspace=0.2)
 
     # Plot uncertainties over polls
-    gs0 = gridspec.GridSpecFromSubplotSpec(
-        uncertainty_row_count, uncertainty_col_count,
-        subplot_spec=gs[1] if plot_rating else gs[0])
-
     for i, answer in enumerate(answer_to_goal_stats.keys()):
         offset = metric_count * i
-        uncertainty_axarr = [plt.subplot(gs0[row_id + offset, col_id])
+        uncertainty_axarr = [plt.subplot(gs[row_id + offset, col_id])
                              for row_id in range(metric_count)
-                             for col_id in range(uncertainty_col_count)]
+                             for col_id in range(col_count)]
         plot_cost_of_multi_picks(uncertainty_axarr, soliconfig_to_stats,
                                  poll=poll, marker_step=marker_step,
                                  answer=answer)
@@ -249,12 +208,59 @@ def plot_sim_stats(soliconfig_to_stats,
                 plot_dir=plot_dir,
                 poll=poll,
                 marker_step=marker_step,
-                answer=answer)
+                answer=answer,
+                )
         export_cost_of_multi_picks_same_answer(
             soliconfig_to_stats,
             poll=poll,
             answer=answer,
             filename=product if product else "overall")
+    return fig
+
+
+def plot_sim_ratings(
+        soliconfig_to_stats,
+        fig_w=16,
+        subplt_fig_h=5,
+        poll=100,
+        product=None,
+        aspect_to_star_counts=None,
+        ):
+    """Plot individual product rating and ratings after simulation."""
+    answer_to_goal_stats = partition_goal_by_answer(soliconfig_to_stats)
+    answer_count = len(answer_to_goal_stats)
+
+    probe_poll_count = 6    # Number of polls to plot ratings at.
+    # 4: first for dataset star counts, 3 for violet, sd and variance plots
+    rating_row_count = answer_count * probe_poll_count + 4
+    fig = plt.figure(figsize=(fig_w, rating_row_count * subplt_fig_h))
+
+    aspect_to_raw_stars = get_raw_stars(aspect_to_star_counts)
+    aspect_to_raw_stars = OrderedDict(
+        sorted(aspect_to_raw_stars.items(), key=lambda kv: np.std(kv[1])))
+    aspects = list(aspect_to_raw_stars.keys())
+
+    rating_row_id = 0
+    gs = gridspec.GridSpec(rating_row_count, 1, hspace=0.4)
+
+    ax = plt.subplot(gs[rating_row_id, :])
+    aspect_to_star_counts = OrderedDict([
+        (aspect, aspect_to_star_counts[aspect]) for aspect in aspects])
+    plot_aspect_star_counts(ax, product, aspect_to_star_counts)
+    rating_row_id += 1
+
+    axarr = [plt.subplot(gs[rating_row_id, :]),
+             plt.subplot(gs[rating_row_id + 1, :]),
+             plt.subplot(gs[rating_row_id + 2, :])]
+    plot_aspect_rating_dist(axarr, product, aspect_to_star_counts,
+                            aspect_to_raw_stars)
+    rating_row_id += 3
+
+    axarr = [plt.subplot(gs[rating_row_id + i, :])
+             for i in range(answer_count * probe_poll_count)]
+    plot_picked_features(axarr, soliconfig_to_stats,
+                         answer_count=answer_count, poll=poll,
+                         sorted_features=aspects)
     return fig
 
 
@@ -311,12 +317,12 @@ def plot_cost_of_multi_picks(axarr,
                              answer="answer_by_gen",
                              poll=100,
                              marker_step=20,
-                             std_poll_step=10):
+                             ):
     """Plot the uncertainty change of multiple pick method with same answer.
     Args:
         axarr: list of Axes
-            Each axes is a cost/std subplot of a SoliConfig
-            In total, #axes: #metric * 2 (cost/std)
+            Each axes is a cost subplot of a SoliConfig
+            In total, #axes: #metric
         soliconfig_to_stats: SoliConfig -> SimulationStats
     """
     stats_sample = list(soliconfig_to_stats.values())[0]
@@ -330,7 +336,7 @@ def plot_cost_of_multi_picks(axarr,
             stats = soliconfig_to_stats[goal]
             reports = stats.uncertainty_reports[0:poll]
             # Plot uncertainty result
-            ax = axarr[metric_idx * 2]
+            ax = axarr[metric_idx]
             Y = [report.get_uncertainty_total(metric) for report in reports]
             ax.plot(X[::marker_step], Y[::marker_step],
                     label=_to_latex(goal_str),
@@ -344,18 +350,6 @@ def plot_cost_of_multi_picks(axarr,
                 ax.legend(loc='lower right')
             else:
                 ax.legend(loc='upper right')
-
-            # Plot standard deviation
-            ax_std = axarr[metric_idx * 2 + 1]
-            Y_std = [report.metric_to_std[metric] for report in reports]
-            ax_std.plot(X[::std_poll_step], Y_std[::std_poll_step],
-                        label=_to_latex(goal.pick_goal_str()),
-                        marker=marker,
-                        ms=MARKER_SIZE,
-                        markeredgewidth=MARKER_WIDTH)
-            ax_std.set_ylabel("standard deviation")
-            ax_std.set_xlabel("Number of reviews")
-            ax_std.legend(loc='upper right')
 
 
 def plot_cost_of_multi_picks_to_pdfs(
@@ -605,6 +599,10 @@ if __name__ == '__main__':
     add_arg("--ratio", type=int, default=GOLDEN_RATIO,
             help="""ratio between width and height of exported single plot (
                     default={}, i.e. golden ratio)""".format(GOLDEN_RATIO))
+    parser.add_argument(
+            "--export-individual-product", action="store_true",
+            help="Export details of individual products if available."
+                 "E.g., Bing Liu dataset has only a few, but diverse items.")
 
     args = parser.parse_args()
 
@@ -621,5 +619,6 @@ if __name__ == '__main__':
         marker_step=args.marker_step,
         conference=args.conference,
         scale=args.scale,
-        ratio=args.ratio
+        ratio=args.ratio,
+        export_individual_product=args.export_individual_product,
     )
