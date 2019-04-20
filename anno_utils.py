@@ -122,6 +122,26 @@ def import_bliu_dataset(filepath):
     return (product, aspect_to_polarity_counts, reviews)
 
 
+def average_review_len_bliu(dataset_path, aspect_sentence_only=False):
+    """Count the average number of words per review in Bliu dataset."""
+    filepaths = match_datafiles(dataset_path, ".txt")
+    len_avgs = []
+    for filepath in filepaths:
+        _, _, reviews_anno = import_bliu_dataset(filepath)
+        review_lens = []
+        for review_anno in reviews_anno:
+            word_count = 0
+            for s, aspects_polar in review_anno.polarized_sentences.items():
+                if not aspect_sentence_only or aspects_polar:
+                    words = s.split(' ')
+                    words = [w for w in words if str.isalpha(w.strip())]
+                    word_count += len(words)
+
+            review_lens.append(word_count)
+        len_avgs.append(sum(review_lens) / len(review_lens))
+    return sum(len_avgs) / len(len_avgs), len_avgs
+
+
 def import_semeval_dataset(filepath):
     """Import annotated dataset of SemEval 2014 Task 4.
 
