@@ -91,8 +91,6 @@ class Scenario(object):
             answer_mths=['answer_by_gen_with_prob'],
             optm_goals=[
                         UncertaintyMetric('expected_rating_var'),
-                        UncertaintyMetric('expected_rating_var',
-                                          rated_prob=True),
                         ]
             )
         return cls(sys._getframe().f_code.co_name, soli_configs, metrics)

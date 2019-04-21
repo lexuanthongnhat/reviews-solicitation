@@ -9,11 +9,12 @@ fi
 DROPBOX="${HOME}/Dropbox/testbox/review_soli/"
 
 #Full list in soli_start.SCENARIOS
-#SCENARIO='basic'
-SCENARIO='mix_interface'
-RUN=200
+SCENARIO='basic_rated_prob'
+#SCENARIO='mix_interface'
+RUN=100
 PRODUCT_COUNT=-1
-POLL=300
+POLL=1500    # to get high_conf_ratio of 1 in 'basic_rated_prob'
+#POLL=300    # typical case
 QUESTION=3
 ANSWER=''
 INPUT='datasets/edmunds_reviews.csv'
