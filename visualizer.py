@@ -1,6 +1,7 @@
 import argparse
 from collections import OrderedDict
 import logging
+import math
 from os import path
 import pickle
 
@@ -66,7 +67,7 @@ def set_style():
 
 palette = sns.color_palette()
 HATCHES = ("/", "'", "|", "-", "+", "x", "o", "O", ".", "*")
-MARKERS = ('o', 'd', 'x', '+', 'P', 'v',
+MARKERS = ('o', 'd', 'x', '+', 'v',
            '1', '2', '3', '4',
            '^', '<', '>', 's', 'p', '*',
            'h', 'H', 'D')
@@ -79,18 +80,19 @@ def _to_latex(raw_str):
     return raw_str.replace("_", " ")
 
 
-def plot_experiment_result(experiment,
-                           experiment_dir="output/",
-                           dataset="edmunds",
-                           plot_dir="plots/",
-                           poll=299,
-                           marker_step=20,
-                           conference="acm",
-                           scale=1,
-                           ratio=GOLDEN_RATIO,
-                           export_individual_product=False,
-                           ):
-    """Plot complete result of an experiment.
+def visualize_experiment_result(
+        experiment,
+        experiment_dir="output/",
+        dataset="edmunds",
+        plot_dir="plots/",
+        poll=299,
+        marker_step=20,
+        conference="acm",
+        scale=1,
+        ratio=GOLDEN_RATIO,
+        export_individual_product=False,
+        ):
+    """Visualize complete result of an experiment.
     Args:
         experiment: str,
             which experiment to plot
@@ -129,8 +131,10 @@ def plot_experiment_result(experiment,
                          scale=scale,
                          conference=conference,
                          ratio=ratio)
-    fig.suptitle('Average over all products', fontsize=15, fontweight='bold')
     savefig(fig, filename)
+    export_cost_of_multi_picks_same_answer(
+        soliconfig_to_stats_average, experiment,
+        poll=poll, plot_dir=plot_dir, product='average')
 
     if export_individual_product and product_to_aspect_stars is not None:
         for product, goal_to_stats in product_to_stats.items():
@@ -153,6 +157,10 @@ def plot_experiment_result(experiment,
                 )
             fig.suptitle(product, fontsize=15, fontweight='bold')
             savefig(fig, f'{filename}_{str(product)}')
+
+            export_cost_of_multi_picks_same_answer(
+                goal_to_stats, experiment,
+                poll=poll, plot_dir=plot_dir, product=product)
 
     logger.info(f'Exported plots to "{filename}*.pdf"')
 
@@ -180,41 +188,47 @@ def plot_sim_stats(soliconfig_to_stats,
             apply when plot_rating=True
     """
     stats_sample = list(soliconfig_to_stats.values())[0]
-    answer_to_goal_stats = partition_goal_by_answer(soliconfig_to_stats)
-    answer_count = len(answer_to_goal_stats)
     metric_count = len(stats_sample.poll_to_report[1].metrics())
+    subplot_count = metric_count
+    col_count = 2
+    row_count = math.ceil(subplot_count / col_count)
+    even_subplot = not bool(subplot_count % col_count)
+    subplot_w, subplot_h = figsize(0.6)
+    fig = plt.figure(figsize=(subplot_w * col_count, subplot_h * row_count))
+    gs = gridspec.GridSpec(row_count, col_count)
 
-    col_count = 1
-    row_count = metric_count * answer_count
-    fig = plt.figure(figsize=(fig_w, row_count * subplt_fig_h))
-    gs = gridspec.GridSpec(row_count, col_count, hspace=0.2)
+    uncertainty_axarr = []
+    for subplot_idx in range(subplot_count):
+        row_idx = int(subplot_idx / row_count)
+        col_idx = subplot_idx % row_count
+        uncertainty_axarr.append(plt.subplot(gs[row_idx, col_idx]))
+    handles, labels = draw_axes_with_picks_uncertainty(
+            uncertainty_axarr, soliconfig_to_stats, poll=poll,
+            marker_step=marker_step, legend=False)
 
-    # Plot uncertainties over polls
-    for i, answer in enumerate(answer_to_goal_stats.keys()):
-        offset = metric_count * i
-        uncertainty_axarr = [plt.subplot(gs[row_id + offset, col_id])
-                             for row_id in range(metric_count)
-                             for col_id in range(col_count)]
-        plot_axes_for_cost_of_multi_picks(
-                uncertainty_axarr, soliconfig_to_stats, poll=poll,
-                marker_step=marker_step)
-        if plot_pdf_prefix is not None:
-            figure_size = figsize(scale, conference=conference, ratio=ratio)
-            plot_cost_of_multi_picks_to_pdfs(
-                plot_pdf_prefix,
-                len(uncertainty_axarr),
-                soliconfig_to_stats,
-                figure_size,
-                plot_dir=plot_dir,
-                poll=poll,
-                marker_step=marker_step,
-                answer=answer,
-                )
-        export_cost_of_multi_picks_same_answer(
+    if even_subplot:
+        fig.legend(handles, labels,
+                   loc='upper center', ncol=3,
+                   borderaxespad=0.)
+    else:
+        # put legend at the last, empty sublot
+        fig.legend(handles, labels,
+                   loc='upper center', bbox_to_anchor=(0.75, 0.46), ncol=1,
+                   borderaxespad=0.)
+    fig.tight_layout()
+
+    if plot_pdf_prefix is not None:
+        figure_size = figsize(scale, conference=conference, ratio=ratio)
+        plot_picks_uncertainty_to_separate_files(
+            plot_pdf_prefix,
+            subplot_count,
             soliconfig_to_stats,
+            figure_size,
+            plot_dir=plot_dir,
             poll=poll,
-            answer=answer,
-            filename=product if product else "overall")
+            marker_step=marker_step,
+            )
+
     return fig
 
 
@@ -265,9 +279,11 @@ def plot_sim_ratings(
 
 
 def export_cost_of_multi_picks_same_answer(soliconfig_to_stats,
-                                           answer="answer_by_gen", poll=100,
-                                           filename=None):
-    """Export cost of multiple pick method with same answer to xlsx file.
+                                           experiment,
+                                           poll=100,
+                                           plot_dir="output",
+                                           product=''):
+    """Export cost of multiple pick methods to xlsx file.
 
     Args:
         axarr: list of Axes
@@ -305,18 +321,19 @@ def export_cost_of_multi_picks_same_answer(soliconfig_to_stats,
 
         metric_answer_to_df[str(metric)] = df
 
-    filepath = "output/" + filename + "_" + answer + ".xlsx"
+    filepath = path.join(plot_dir, f'{experiment}_{product}.xlsx')
     with pd.ExcelWriter(filepath) as writer:
         for sheetname, df in metric_answer_to_df.items():
             df.to_excel(writer, sheet_name=sheetname[:31],
                         float_format="%.3f", freeze_panes=(1, 1))
 
 
-def plot_axes_for_cost_of_multi_picks(
+def draw_axes_with_picks_uncertainty(
         axarr,
         soliconfig_to_stats,
         poll=100,
         marker_step=20,
+        legend=True,
         ):
     """Plot the uncertainty change of multiple pick method with same answer.
     Args:
@@ -324,6 +341,8 @@ def plot_axes_for_cost_of_multi_picks(
             Each axes is a cost subplot of a SoliConfig
             In total, #axes: #metric
         soliconfig_to_stats: SoliConfig -> SimulationStats
+    Returns:
+        handles, labels: of plot's legend
     """
     stats_sample = list(soliconfig_to_stats.values())[0]
     metrics = stats_sample.poll_to_report[1].metrics()
@@ -345,35 +364,34 @@ def plot_axes_for_cost_of_multi_picks(
                     markeredgewidth=MARKER_WIDTH)
             ax.set_ylabel(_to_latex(str(metric)))
             ax.set_xlabel("Number of reviews")
-            if metric.ratio:
-                # avoid overlapping in case of high_confidence_ratio metric
-                ax.legend(loc='lower right')
-            else:
-                ax.legend(loc='upper right')
+            handles, labels = ax.get_legend_handles_labels()
+            if legend:
+                if metric.ratio:
+                    # avoid overlapping in case of high_confidence_ratio metric
+                    ax.legend(loc='lower right')
+                else:
+                    ax.legend(loc='upper right')
+    return handles, labels
 
 
-def plot_cost_of_multi_picks_to_pdfs(
-        pdf_prefix,
+def plot_picks_uncertainty_to_separate_files(
+        experiment_name,
         subplot_count,
         soliconfig_to_stats,
         figsize,
         plot_dir="plots/",
-        answer="answer_by_gen",
         poll=100,
         marker_step=5,
-        std_poll_step=10):
-    """Export to pdf plot.
-
-    """
-    filenames = [path.join(plot_dir, pdf_prefix + "_" + str(i))
+        std_poll_step=10,
+        ):
+    """Export each uncertainty measure to a separate subplot file."""
+    filenames = [path.join(plot_dir, experiment_name + "_" + str(i))
                  for i in range(subplot_count)]
     figs = [plt.figure(figsize=figsize)
             for i in range(subplot_count)]
     axarr = [fig.add_subplot(1, 1, 1) for fig in figs]
-
-    plot_axes_for_cost_of_multi_picks(axarr, soliconfig_to_stats,
-                                      poll=poll, marker_step=marker_step)
-
+    draw_axes_with_picks_uncertainty(
+            axarr, soliconfig_to_stats, poll=poll, marker_step=marker_step)
     for filename, fig in zip(filenames, figs):
         fig.patch.set_alpha(0.)
         savefig(fig, filename)
@@ -610,7 +628,7 @@ if __name__ == '__main__':
     set_style()
     np.set_printoptions(precision=1)
 
-    plot_experiment_result(
+    visualize_experiment_result(
         args.experiment,
         experiment_dir=args.experiment_dir,
         dataset=args.dataset,
